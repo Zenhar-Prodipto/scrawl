@@ -1,0 +1,11 @@
+# Ignore environment variables file
+.env
+
+# Ignore virtual environment folder
+scrawl-env/
+
+# Ignore Python bytecode files
+*.pyc
+
+# Ignore text file that may contain commands or sensitive information
+project-related-stuff.txt

@@ -7,6 +7,10 @@ WORKDIR /app
 # Install system dependencies
 RUN apt-get update && apt-get install -y netcat-openbsd && rm -rf /var/lib/apt/lists/*
 
+# Copy and set permissions for entrypoint first
+COPY entrypoint.sh /app/
+RUN chmod +x /app/entrypoint.sh
+
 # Copy the requirements.txt file to the container
 COPY requirements.txt /app/
 
@@ -15,9 +19,6 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy the entire project into the container
 COPY . /app/
-
-# Make entrypoint script executable
-RUN chmod +x /app/entrypoint.sh
 
 # Expose the port Django runs on
 EXPOSE 8000

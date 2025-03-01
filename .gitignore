@@ -9,3 +9,6 @@ scrawl-env/
 
 # Ignore text file that may contain commands or sensitive information
 project-related-stuff.txt
+
+# Ignores the data inside media directory
+media/

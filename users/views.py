@@ -5,6 +5,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from django.db import DatabaseError
 from .serializers import RegisterSerializer
 from rest_framework import serializers
+from .serializers import UserSerializer
 
 class RegisterView(generics.CreateAPIView):
     serializer_class = RegisterSerializer
@@ -48,16 +49,19 @@ class RegisterView(generics.CreateAPIView):
             )
 
         # Success response
+
+        user_data = UserSerializer(user).data # Use UserSerializer to include interests
         return Response(
             {
                 "status": "success",
                 "message": "User registered and logged in successfully",
                 "data": {
-                    "id": user.id,
-                    "username": user.username,
-                    "email": user.email,
-                    "first_name": user.first_name,
-                    "last_name": user.last_name,
+                    "id": user_data['id'],
+                    "username": user_data['username'],
+                    "email": user_data['email'],
+                    "first_name": user_data['first_name'],
+                    "last_name": user_data['last_name'],
+                    "interests": user_data['interests'],  # Now included
                     "access_token": str(refresh.access_token),
                     "refresh_token": str(refresh)
                 }

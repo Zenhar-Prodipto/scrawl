@@ -20,10 +20,16 @@ class RegisterSerializer(serializers.ModelSerializer):
     password = serializers.CharField(required=True, write_only=True, min_length=6)
     first_name = serializers.CharField(required=True, max_length=30)
     last_name = serializers.CharField(required=True, max_length=150)
+    interests = serializers.PrimaryKeyRelatedField(  # Links to Interest IDs
+        many=True,
+        queryset=Interest.objects.all(),
+        required=True,
+        help_text="List of interest IDs (e.g., [1, 2])"
+    )
 
     class Meta:
         model = User
-        fields = ['username', 'email', 'password', 'first_name', 'last_name']
+        fields = ['username', 'email', 'password', 'first_name', 'last_name','interests']
         
     def validate(self, data):
         # Check raw input before coercion
@@ -31,6 +37,13 @@ class RegisterSerializer(serializers.ModelSerializer):
         for field in ['username', 'email', 'first_name', 'last_name']:
             if field in raw_data and not isinstance(raw_data[field], str):
                 raise serializers.ValidationError({field: "This field must be a string, not a number or other type."})
+            
+        if 'interests' not in raw_data:
+            raise serializers.ValidationError({"interests": "This field is required."})
+        if not isinstance(raw_data['interests'], list):
+            raise serializers.ValidationError({"interests": "Interests must be a list of IDs (e.g., [1, 2])."})
+        if len(raw_data['interests']) < 2:
+            raise serializers.ValidationError({"interests": "You must select at least 2 interests."})
         return data
 
     def validate_username(self, value):
@@ -56,10 +69,13 @@ class RegisterSerializer(serializers.ModelSerializer):
         return value
 
     def create(self, validated_data):
-        return create_user(
+        interests = validated_data.pop('interests')
+        user = create_user(
             username=validated_data['username'],
             email=validated_data['email'],
             password=validated_data['password'],
             first_name=validated_data['first_name'],
             last_name=validated_data['last_name']
         )
+        user.interests.set(interests)
+        return user

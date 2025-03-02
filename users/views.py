@@ -4,6 +4,7 @@ from rest_framework.permissions import AllowAny
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.db import DatabaseError
 from .serializers import RegisterSerializer
+from rest_framework import serializers
 
 class RegisterView(generics.CreateAPIView):
     serializer_class = RegisterSerializer

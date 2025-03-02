@@ -24,6 +24,14 @@ class RegisterSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
         fields = ['username', 'email', 'password', 'first_name', 'last_name']
+        
+    def validate(self, data):
+        # Check raw input before coercion
+        raw_data = self.initial_data  # Original request data
+        for field in ['username', 'email', 'first_name', 'last_name']:
+            if field in raw_data and not isinstance(raw_data[field], str):
+                raise serializers.ValidationError({field: "This field must be a string, not a number or other type."})
+        return data
 
     def validate_username(self, value):
         if not isinstance(value, str):

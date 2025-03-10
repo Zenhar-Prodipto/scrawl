@@ -3,9 +3,11 @@ from rest_framework.response import Response
 from rest_framework.permissions import AllowAny
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.db import DatabaseError
-from .serializers import RegisterSerializer
+from django.contrib.auth import authenticate
+from .serializers import RegisterSerializer, LoginSerializer
 from rest_framework import serializers
 from .serializers import UserSerializer
+from .services import get_user_by_email, match_password
 
 class RegisterView(generics.CreateAPIView):
     serializer_class = RegisterSerializer
@@ -71,4 +73,52 @@ class RegisterView(generics.CreateAPIView):
         
         
 
-            
+class LoginView(generics.GenericAPIView):
+    serializer_class = LoginSerializer
+    permission_classes = [AllowAny]
+
+    def post(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        try:
+            serializer.is_valid(raise_exception=True)
+        except serializers.ValidationError as e:
+            return Response(
+                {"status": "error", "message": "Validation failed", "errors": e.detail},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        try:
+            user = authenticate(
+                email=serializer.validated_data['email'],
+                password=serializer.validated_data['password']
+            )
+            if not user:
+                return Response(
+                    {"status": "error", "message": "Invalid credentials"},
+                    status=status.HTTP_401_UNAUTHORIZED
+                )
+            refresh = RefreshToken.for_user(user)
+            user_data = UserSerializer(user).data
+            return Response({
+                "status": "success",
+                "message": "User logged in successfully",
+                "data": {
+                    "id": user_data['id'],
+                    "username": user_data['username'],
+                    "email": user_data['email'],
+                    "first_name": user_data['first_name'],
+                    "last_name": user_data['last_name'],
+                    "interests": user_data['interests'],
+                    "access_token": str(refresh.access_token),
+                    "refresh_token": str(refresh)
+                }
+            }, status=status.HTTP_200_OK)
+        except DatabaseError:
+            return Response(
+                {"status": "error", "message": "Database error occurred"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+        except Exception as e:
+            return Response(
+                {"status": "error", "message": f"Unexpected error: {str(e)}"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )

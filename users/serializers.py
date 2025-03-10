@@ -32,7 +32,7 @@ class RegisterSerializer(serializers.ModelSerializer):
         fields = ['username', 'email', 'password', 'first_name', 'last_name','interests']
         
     def validate(self, data):
-        # Check raw input before coercion
+        # Check raw input before coercion for strict validation
         raw_data = self.initial_data  # Original request data
         for field in ['username', 'email', 'first_name', 'last_name']:
             if field in raw_data and not isinstance(raw_data[field], str):
@@ -79,3 +79,25 @@ class RegisterSerializer(serializers.ModelSerializer):
         )
         user.interests.set(interests)
         return user
+    
+    
+class LoginSerializer(serializers.Serializer):
+    email = serializers.EmailField(required=True)
+    password = serializers.CharField(required=True)
+    
+        
+    # Validate function might look redundant but I'm being strict on raw data input 
+    def validate(self,data):
+        raw_data = self.initial_data
+        if not isinstance(raw_data['email'],str) or not isinstance(raw_data['password'],str):
+            raise serializers.ValidationError("Email and password must be strings.")
+        return data
+        
+    def validate_email(self, value):
+        if not isinstance(value, str):
+             raise serializers.ValidationError("Email must be a string.")
+            
+        if not User.objects.filter(email=value).exists():
+            raise serializers.ValidationError("User with this email does not exist")
+        return value
+        

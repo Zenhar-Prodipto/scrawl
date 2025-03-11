@@ -44,7 +44,8 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     # Third-party apps
     'rest_framework',
-
+    'rest_framework_simplejwt',
+    'rest_framework_simplejwt.token_blacklist',
     # My apps
     'users',   # Users app
     'posts',   # Posts app
@@ -126,6 +127,7 @@ AUTH_PASSWORD_VALIDATORS = [
 
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
+        # 'users.auth.EmailBackend',
         'rest_framework_simplejwt.authentication.JWTAuthentication',
     ],
 }
@@ -133,7 +135,12 @@ REST_FRAMEWORK = {
 SIMPLE_JWT = {
     'ACCESS_TOKEN_LIFETIME': timedelta(days=1),  # 1-day expiry
     'REFRESH_TOKEN_LIFETIME': timedelta(days=7),  # Optional: refresh token lasts longer
+    'BLACKLIST_AFTER_ROTATION': True,
 }
+
+AUTHENTICATION_BACKENDS = [
+    'django.contrib.auth.backends.ModelBackend',  # Keeping this default as fallback
+]
 
 
 # Internationalization
@@ -159,4 +166,5 @@ STATIC_URL = 'static/'
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 MEDIA_URL = '/media/'
-MEDIA_ROOT = BASE_DIR / 'media'
+MEDIA_ROOT = BASE_DIR / 'media'# Put this at the bottom of your settings.py
+AUTH_USER_MODEL = 'users.User'

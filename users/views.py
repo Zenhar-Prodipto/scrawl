@@ -4,10 +4,11 @@ from rest_framework.permissions import AllowAny
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.db import DatabaseError
 from django.contrib.auth import authenticate
-from .serializers import RegisterSerializer, LoginSerializer
+from rest_framework.permissions import IsAuthenticated
+from .serializers import RegisterSerializer, LoginSerializer,LogoutSerializer,InterestSerializer
 from rest_framework import serializers
 from .serializers import UserSerializer
-from .services import get_user_by_email, match_password
+from .services import get_interests,get_user_by_email,match_password
 
 class RegisterView(generics.CreateAPIView):
     serializer_class = RegisterSerializer
@@ -87,11 +88,11 @@ class LoginView(generics.GenericAPIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
         try:
-            user = authenticate(
-                email=serializer.validated_data['email'],
-                password=serializer.validated_data['password']
-            )
-            if not user:
+            user = get_user_by_email(serializer.validated_data['email']) 
+            is_password_correct = match_password(user,serializer.validated_data['password'])
+            
+            
+            if not user or not is_password_correct:
                 return Response(
                     {"status": "error", "message": "Invalid credentials"},
                     status=status.HTTP_401_UNAUTHORIZED
@@ -122,3 +123,51 @@ class LoginView(generics.GenericAPIView):
                 {"status": "error", "message": f"Unexpected error: {str(e)}"},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+            
+class LogoutView(generics.GenericAPIView):
+    serializer_class = LogoutSerializer
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, *args, **kwargs):
+        print(f"LogoutView: User={request.user}, Token={request.auth}", flush=True)
+        serializer = self.get_serializer(data=request.data)
+        try:
+            serializer.is_valid(raise_exception=True)
+        except serializers.ValidationError as e:
+            return Response(
+                {"status": "error", "message": "Validation failed", "errors": e.detail},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        return Response(
+            {"status": "success", "message": "Logged out successfully"},
+            status=status.HTTP_200_OK
+        )
+        
+class InterestsView(generics.ListAPIView):
+    serializer_class = InterestSerializer
+    permission_classes = [AllowAny]
+    
+    def get_queryset(self):
+        return get_interests()
+    
+    def list(self, request, *args, **kwargs):
+        try:
+            queryset = self.get_queryset()
+            serializer = self.get_serializer(queryset, many=True)
+            interests_data = serializer.data
+            return Response(
+                {"status": "success", "data": interests_data},
+                status=status.HTTP_200_OK
+            )
+        except DatabaseError:
+            return Response(
+                {"status": "error", "message": "Database error occurred"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+        except Exception as e:
+            return Response(
+                {"status": "error", "message": f"Unexpected error: {str(e)}"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+            
+  

@@ -1,5 +1,6 @@
 from .models import User
-
+from .models import Interest
+from django.db import DatabaseError
 def create_user(username,email,password,first_name,last_name):
     """
     Create a new user with the given credentials.
@@ -28,5 +29,8 @@ def get_user_by_username(username):
     return User.objects.get(username=username)
 
 def match_password(user, password):
-    return user.check_password(password)
+    return user.check_password(password) 
+
+def get_interests():
+    return Interest.objects.all()
     

@@ -1,4 +1,5 @@
 from rest_framework import serializers
+from rest_framework_simplejwt.tokens import RefreshToken
 from .models import User, Interest
 from .services import create_user
 
@@ -98,6 +99,21 @@ class LoginSerializer(serializers.Serializer):
              raise serializers.ValidationError("Email must be a string.")
             
         if not User.objects.filter(email=value).exists():
-            raise serializers.ValidationError("User with this email does not exist")
+            raise serializers.ValidationError("Invalid credentials")
         return value
-        
+    
+
+class LogoutSerializer(serializers.Serializer):
+    refresh_token = serializers.CharField(required=True)
+
+    def validate(self, data):
+        print(f"LogoutSerializer: Refresh={data['refresh_token']}", flush=True)
+        if not isinstance(data['refresh_token'], str):
+            raise serializers.ValidationError("Refresh token must be a string.")
+        try:
+            token = RefreshToken(data['refresh_token'])
+            token.blacklist()
+            print("LogoutSerializer: Token blacklisted", flush=True)
+        except Exception as e:
+            raise serializers.ValidationError(f"Invalid or expired refresh token: {str(e)}")
+        return data

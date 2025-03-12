@@ -5,7 +5,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from django.db import DatabaseError
 from django.contrib.auth import authenticate
 from rest_framework.permissions import IsAuthenticated
-from .serializers import RegisterSerializer, LoginSerializer,LogoutSerializer,InterestSerializer
+from .serializers import RegisterSerializer, LoginSerializer,LogoutSerializer,InterestSerializer,UpdateUserSerializer
 from rest_framework import serializers
 from .serializers import UserSerializer
 from .services import get_interests,get_user_by_email,match_password
@@ -169,6 +169,47 @@ class UserProfileView(generics.RetrieveUpdateDestroyAPIView):
                 {"status": "error", "message": f"Unexpected error: {str(e)}"},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+            
+    def patch(self,request,*args,**kwargs):
+        user = self.get_object()
+        if not user:
+            return Response({"status": "error", "message": "user not found!"},
+            status=status.HTTP_404_NOT_FOUND
+            )
+        serializer = UpdateUserSerializer(user,data=request.data,partial=True)
+        
+        try:
+            serializer.is_valid(raise_exception=True)
+            updated_user = serializer.save()
+            updated_user_data = UserSerializer(updated_user).data 
+            
+            return Response(
+                    {"status":"success","message":"Here is your user profile","data":updated_user_data},
+                    status=status.HTTP_200_OK
+                    )
+            
+        except serializers.ValidationError as e:
+            return Response({
+                "status": "error",
+                "message": e.detail  
+            }, status=status.HTTP_400_BAD_REQUEST)
+            
+        except ValueError as e:
+            return Response({
+                "status": "error",
+                "message": str(e)  # e.g., "One or more interest IDs do not exist"
+            }, status=status.HTTP_400_BAD_REQUEST)
+        except DatabaseError:
+            return Response({
+                "status": "error",
+                "message": "Database error occurred"
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        except Exception as e:
+            return Response({
+                "status": "error",
+                "message": f"Unexpected error: {str(e)}"
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
             
         
 class InterestsView(generics.ListAPIView):

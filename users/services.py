@@ -1,5 +1,6 @@
 from .models import User, Interest
 from django.db import DatabaseError
+from django.utils import timezone
 def create_user(username,email,password,first_name,last_name):
     """
     Create a new user with the given credentials.
@@ -13,7 +14,6 @@ def create_user(username,email,password,first_name,last_name):
     )
     return user
 
-from .models import User
 
 def get_user_by_id(user_id):
     return User.objects.get(id=user_id)
@@ -64,6 +64,18 @@ def update_user(user: User, validated_data: dict) -> User:
         raise DatabaseError(f"Database error during update: {str(e)}")
     except Exception as e:
         raise Exception(f"Unexpected error during update: {str(e)}")
+    
+def soft_delete_user(user:User)->User:
+    try:
+        user.is_deleted = True
+        user.deleted_at  =timezone.now()
+        user.save()
+        return user 
+    except DatabaseError as e:
+        raise DatabaseError(f"Database error during soft delete: {str(e)}")
+    except Exception as e:
+        raise Exception(f"Unexpected error during soft delete: {str(e)}")
+        
 
 def get_interests():
     return Interest.objects.all()

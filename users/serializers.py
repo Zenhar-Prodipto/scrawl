@@ -12,8 +12,8 @@ class UserSerializer(serializers.ModelSerializer):
     interests = InterestSerializer(many=True, read_only=True)
     class Meta:
         model = User
-        fields = ['id', 'username', 'email', 'first_name', 'last_name', 'profile_picture', 'interests']
-        read_only_fields = ['id']
+        fields = ['id', 'username', 'email', 'first_name', 'last_name', 'profile_picture', 'interests','is_deleted', 'deleted_at']
+        read_only_fields = ['id','is_deleted', 'deleted_at']
 
 class RegisterSerializer(serializers.ModelSerializer):
     username = serializers.CharField(required=True, max_length=150)

@@ -1,6 +1,6 @@
 from django.db import models
 from django.contrib.auth.models import AbstractUser
-
+from django.db.models import JSONField
 class Interest(models.Model):
     """
     Represents a single interest that users can associate with their profile.
@@ -29,12 +29,12 @@ class User(AbstractUser):
         help_text="User's email address (required and unique)."
     )
     
-    profile_picture = models.ImageField(
-        upload_to='profiles/',
+    profile_picture = JSONField(
+        blank=True, 
         null=True,
-        blank=True,
-        help_text="User's profile picture."
-    )
+        default=dict,
+        help_text="User's profile picture of different sizes"
+        )
     
     interests = models.ManyToManyField(
         Interest,

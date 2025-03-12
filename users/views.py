@@ -93,7 +93,7 @@ class LoginView(generics.GenericAPIView):
             is_password_correct = match_password(user,serializer.validated_data['password'])
             
             
-            if not user or not is_password_correct:
+            if not user or not is_password_correct or user.is_deleted:
                 return Response(
                     {"status": "error", "message": "Invalid credentials"},
                     status=status.HTTP_401_UNAUTHORIZED
@@ -149,7 +149,10 @@ class UserProfileView(generics.RetrieveUpdateDestroyAPIView):
     permission_classes = [IsAuthenticated]
     
     def get_object(self):
-        return self.request.user
+        user = self.request.user
+        if user.is_deleted:
+            return None
+        return user
     
     def get(self,request,*args,**kwargs):
         try:

@@ -1,6 +1,6 @@
 from django.db import models
 from django.contrib.auth.models import AbstractUser
-
+from django.db.models import JSONField
 class Interest(models.Model):
     """
     Represents a single interest that users can associate with their profile.
@@ -29,12 +29,12 @@ class User(AbstractUser):
         help_text="User's email address (required and unique)."
     )
     
-    profile_picture = models.ImageField(
-        upload_to='profiles/',
+    profile_picture = JSONField(
+        blank=True, 
         null=True,
-        blank=True,
-        help_text="User's profile picture."
-    )
+        default=dict,
+        help_text="User's profile picture of different sizes"
+        )
     
     interests = models.ManyToManyField(
         Interest,
@@ -57,6 +57,18 @@ class User(AbstractUser):
         blank=True,
         help_text="Specific permissions for this user."
     )
+    
+    is_deleted = models.BooleanField(
+        default=False,
+        help_text="Boolean Field to detect if a user is deleted"
+    )  
+       
+    deleted_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="timestamp of delete "
+    ) 
+    
 
     def __str__(self):
         return self.username

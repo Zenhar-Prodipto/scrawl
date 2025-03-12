@@ -1,7 +1,7 @@
 from rest_framework import serializers
 from rest_framework_simplejwt.tokens import RefreshToken
 from .models import User, Interest
-from .services import create_user
+from .services import create_user, update_user
 
 class InterestSerializer(serializers.ModelSerializer):
     class Meta:
@@ -12,8 +12,8 @@ class UserSerializer(serializers.ModelSerializer):
     interests = InterestSerializer(many=True, read_only=True)
     class Meta:
         model = User
-        fields = ['id', 'username', 'email', 'first_name', 'last_name', 'profile_picture', 'interests']
-        read_only_fields = ['id']
+        fields = ['id', 'username', 'email', 'first_name', 'last_name', 'profile_picture', 'interests','is_deleted', 'deleted_at']
+        read_only_fields = ['id','is_deleted', 'deleted_at']
 
 class RegisterSerializer(serializers.ModelSerializer):
     username = serializers.CharField(required=True, max_length=150)
@@ -117,3 +117,82 @@ class LogoutSerializer(serializers.Serializer):
         except Exception as e:
             raise serializers.ValidationError(f"Invalid or expired refresh token: {str(e)}")
         return data
+    
+
+class InterestDeltaSerializer(serializers.Serializer):
+    add = serializers.ListField(child=serializers.IntegerField(), required=False)
+    remove = serializers.ListField(child=serializers.IntegerField(), required=False)
+    
+    def validate(self, data):
+        # No self.initial_data here - use data directly
+        add = data.get('add', [])
+        remove = data.get('remove', [])
+        # Optional: Add custom validation
+        if not isinstance(add, list) or not isinstance(remove, list):
+            raise serializers.ValidationError("Both 'add' and 'remove' must be lists.")
+        # Check if Interest IDs exist
+        invalid_add = [id for id in add if not Interest.objects.filter(id=id).exists()]
+        invalid_remove = [id for id in remove if not Interest.objects.filter(id=id).exists()]
+        if invalid_add or invalid_remove:
+            raise serializers.ValidationError({
+                "add": f"Invalid interest IDs: {invalid_add}" if invalid_add else None,
+                "remove": f"Invalid interest IDs: {invalid_remove}" if invalid_remove else None
+            })
+        return data
+class UpdateUserSerializer(serializers.ModelSerializer):
+    interests = InterestDeltaSerializer(required=False)
+    username = serializers.CharField(required=False, allow_null=False, allow_blank=False)
+    
+    class Meta:
+        model = User
+        fields = ['username', 'first_name', 'last_name', 'profile_picture', 'interests']
+        extra_kwargs = {
+            'first_name': {'required': False},
+            'last_name': {'required': False},
+            'profile_picture': {'required': False},
+        }
+        
+    def validate(self,data):
+        raw_data = self.initial_data
+        validated_data = {}
+        for field in ['username', 'first_name', 'last_name']:
+            if field in raw_data:
+                if not isinstance(raw_data[field], str):
+                    raise serializers.ValidationError({field: "This field must be a string."})
+                validated_data[field] = raw_data[field]
+        if 'profile_picture' in raw_data:
+            if not isinstance(raw_data['profile_picture'], dict):
+                raise serializers.ValidationError({"profile_picture": "This field must be a dictionary (e.g., {'full': 'url1', 'thumb': 'url2'})."})
+            validated_data['profile_picture'] = raw_data['profile_picture']
+        interests_serializer = InterestDeltaSerializer(data=raw_data['interests'])
+        interests_serializer.is_valid(raise_exception=True)
+        validated_data['interests'] = interests_serializer.validated_data
+        print("Post-Validate Data:", validated_data, flush=True)
+        return validated_data
+    
+    def validate_username(self,value):
+        if not isinstance(value,str):
+            raise serializers.ValidationError("Username must be a string.")
+        user = self.instance # Current user being updated
+        if User.objects.exclude(id=user.id).filter(username=value).exists():
+            raise serializers.ValidationError("A user with this username already exists.")
+        
+    def validate_first_name(self, value):
+        if not isinstance(value, str):
+            raise serializers.ValidationError("First name must be a string.")
+        return value
+
+    def validate_last_name(self, value):
+        if not isinstance(value, str):
+            raise serializers.ValidationError("Last name must be a string.")
+        return value
+
+    def validate_profile_picture(self, value):
+        if not isinstance(value, dict):
+            raise serializers.ValidationError("Profile picture must be a dictionary.")
+        return value
+
+    def update(self, instance, validated_data): 
+        print("Validated Data",validated_data,flush=True)
+        user = update_user(instance, validated_data)
+        return user

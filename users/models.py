@@ -57,6 +57,18 @@ class User(AbstractUser):
         blank=True,
         help_text="Specific permissions for this user."
     )
+    
+    is_deleted = models.BooleanField(
+        default=False,
+        help_text="Boolean Field to detect if a user is deleted"
+    )  
+       
+    deleted_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="timestamp of delete "
+    ) 
+    
 
     def __str__(self):
         return self.username

@@ -37,6 +37,7 @@ def update_user(user: User, validated_data: dict) -> User:
     Handles fields and interests delta. Returns updated user.
     """
     try:
+        print("Validated Data from service layer",validated_data,flush=True)
         # Update regular fields if present
         if 'username' in validated_data:
             user.username = validated_data['username']

@@ -118,36 +118,35 @@ class LogoutSerializer(serializers.Serializer):
             raise serializers.ValidationError(f"Invalid or expired refresh token: {str(e)}")
         return data
     
+
 class InterestDeltaSerializer(serializers.Serializer):
-    add = serializers.PrimaryKeyRelatedField(
-        many=True,
-        queryset=Interest.objects.all(),
-        required=False,
-        help_text="List of interest IDs to add (e.g., [1, 2])"
-    )
-    remove = serializers.PrimaryKeyRelatedField(
-        many=True,
-        queryset=Interest.objects.all(),
-        required=False,
-        help_text="List of interest IDs to remove (e.g., [3])"
-    )
-
+    add = serializers.ListField(child=serializers.IntegerField(), required=False)
+    remove = serializers.ListField(child=serializers.IntegerField(), required=False)
+    
     def validate(self, data):
-        raw_data = self.initial_data
-        if 'add' in raw_data and not isinstance(raw_data['add'], list) or len(raw_data['add']) < 1:
-            raise serializers.ValidationError({"add": "Must be a list of interest IDs (e.g., [1, 2])."})
-        if 'remove' in raw_data and not isinstance(raw_data['remove'], list) or len(raw_data['remove']) < 1:
-            raise serializers.ValidationError({"remove": "Must be a list of interest IDs (e.g., [3])."})
+        # No self.initial_data here - use data directly
+        add = data.get('add', [])
+        remove = data.get('remove', [])
+        # Optional: Add custom validation
+        if not isinstance(add, list) or not isinstance(remove, list):
+            raise serializers.ValidationError("Both 'add' and 'remove' must be lists.")
+        # Check if Interest IDs exist
+        invalid_add = [id for id in add if not Interest.objects.filter(id=id).exists()]
+        invalid_remove = [id for id in remove if not Interest.objects.filter(id=id).exists()]
+        if invalid_add or invalid_remove:
+            raise serializers.ValidationError({
+                "add": f"Invalid interest IDs: {invalid_add}" if invalid_add else None,
+                "remove": f"Invalid interest IDs: {invalid_remove}" if invalid_remove else None
+            })
         return data
-
 class UpdateUserSerializer(serializers.ModelSerializer):
     interests = InterestDeltaSerializer(required=False)
+    username = serializers.CharField(required=False, allow_null=False, allow_blank=False)
     
     class Meta:
         model = User
         fields = ['username', 'first_name', 'last_name', 'profile_picture', 'interests']
         extra_kwargs = {
-            'username': {'required': False},
             'first_name': {'required': False},
             'last_name': {'required': False},
             'profile_picture': {'required': False},
@@ -155,15 +154,21 @@ class UpdateUserSerializer(serializers.ModelSerializer):
         
     def validate(self,data):
         raw_data = self.initial_data
+        validated_data = {}
         for field in ['username', 'first_name', 'last_name']:
-            if field in raw_data and not isinstance(raw_data[field],str):
-                raise serializers.ValidationError(({field: "This field must be a string."}))
-
-        if 'profile_picture' in raw_data and not isinstance(raw_data['profile_picture'],dict):
-            raise serializers.ValidationError({"profile_picture": "This field must be a dictionary (e.g., {'full': 'url1', 'thumb': 'url2'})."})
-        if 'interests' in raw_data and not isinstance(raw_data["interests"],dict):
-            raise serializers.ValidationError({"interests": "This field must be a dictionary with 'add' and/or 'remove' keys."})
-        return data 
+            if field in raw_data:
+                if not isinstance(raw_data[field], str):
+                    raise serializers.ValidationError({field: "This field must be a string."})
+                validated_data[field] = raw_data[field]
+        if 'profile_picture' in raw_data:
+            if not isinstance(raw_data['profile_picture'], dict):
+                raise serializers.ValidationError({"profile_picture": "This field must be a dictionary (e.g., {'full': 'url1', 'thumb': 'url2'})."})
+            validated_data['profile_picture'] = raw_data['profile_picture']
+        interests_serializer = InterestDeltaSerializer(data=raw_data['interests'])
+        interests_serializer.is_valid(raise_exception=True)
+        validated_data['interests'] = interests_serializer.validated_data
+        print("Post-Validate Data:", validated_data, flush=True)
+        return validated_data
     
     def validate_username(self,value):
         if not isinstance(value,str):
@@ -188,5 +193,6 @@ class UpdateUserSerializer(serializers.ModelSerializer):
         return value
 
     def update(self, instance, validated_data): 
+        print("Validated Data",validated_data,flush=True)
         user = update_user(instance, validated_data)
         return user

@@ -23,3 +23,32 @@ def unfollow_user(user: User, target_id: int) -> None:
         raise User.DoesNotExist("Target user does not exist.")
     except DatabaseError as e:
         raise DatabaseError(f"Database error: {str(e)}")
+    
+def get_followers(user_id:int)->list[User]:
+    try:
+        user = User.objects.get(id=user_id, is_deleted=False)
+        followers = User.objects.filter(following__followed=user, is_deleted=False)
+        return followers
+    except User.DoesNotExist:  # Specific
+        raise User.DoesNotExist("Target user does not exist.")
+    except DatabaseError as e:
+        raise DatabaseError(f"Database error: {str(e)}")
+    
+def get_following(user_id:int)->list[User]:
+    try:
+        user = User.objects.get(id=user_id, is_deleted=False)
+        following = User.objects.filter(following__follower=user, is_deleted=False)
+        return following
+    except User.DoesNotExist:  # Specific
+        raise User.DoesNotExist("Target user does not exist.")
+    except DatabaseError as e:  
+        raise DatabaseError(f"Database error: {str(e)}")
+    
+def check_follow_status(current_user: User, target_id: int) -> bool:
+    try:
+        target_user = User.objects.get(id=target_id, is_deleted=False)
+        return Follow.objects.filter(follower=current_user, followed=target_user).exists()
+    except User.DoesNotExist:
+        raise User.DoesNotExist("Target user does not exist.")
+    except DatabaseError as e:
+        raise DatabaseError(f"Database error: {str(e)}")

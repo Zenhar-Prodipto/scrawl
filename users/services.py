@@ -16,17 +16,22 @@ def create_user(username,email,password,first_name,last_name):
 
 
 def get_user_by_id(user_id):
-    return User.objects.get(id=user_id)
+    try:
+        return User.objects.get(id=user_id,is_deleted=False)
+    except User.DoesNotExist:
+        return None
 
 def get_user_by_email(email):
     try:
-        return User.objects.get(email=email)
+        return User.objects.get(email=email,is_deleted=False)
     except User.DoesNotExist:
         return None
 
 def get_user_by_username(username):
-    return User.objects.get(username=username)
-
+    try:
+        return User.objects.get(username=username,is_deleted=False)
+    except User.DoesNotExist:
+        return None
 def match_password(user, password):
     return user.check_password(password) 
 

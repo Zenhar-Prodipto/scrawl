@@ -1,7 +1,7 @@
 from .models import User, Interest
 from django.db import DatabaseError
 from django.utils import timezone
-def create_user(username,email,password,first_name,last_name):
+def create_user(username,email,password,first_name,last_name,profile_type='public', bio=None):
     """
     Create a new user with the given credentials.
     """
@@ -10,7 +10,9 @@ def create_user(username,email,password,first_name,last_name):
         email=email,
         password=password,
         first_name=first_name,
-        last_name=last_name
+        last_name=last_name,
+        profile_type=profile_type,
+        bio=bio
     )
     return user
 
@@ -52,6 +54,10 @@ def update_user(user: User, validated_data: dict) -> User:
             user.last_name = validated_data['last_name']
         if 'profile_picture' in validated_data:
             user.profile_picture = validated_data['profile_picture']
+        if 'bio' in validated_data:
+            user.bio = validated_data['bio']
+        if 'profile_type' in validated_data:
+            user.profile_type = validated_data['profile_type']
 
         # Handle interests delta
         interests_data = validated_data.get('interests', {})

@@ -5,6 +5,7 @@ class Interest(models.Model):
     """
     Represents a single interest that users can associate with their profile.
     """
+
     name = models.CharField(
         max_length=50,
         unique=True,
@@ -22,6 +23,12 @@ class User(AbstractUser):
     """
     Custom User model for Scrawl with extended profile fields.
     """
+    
+    PROFILE_TYPE_CHOICES = (
+        ('public', 'Public'),
+        ('private', 'Private'),
+    )
+    
     email = models.EmailField(
         unique=True,
         blank=False,
@@ -35,6 +42,20 @@ class User(AbstractUser):
         default=dict,
         help_text="User's profile picture of different sizes"
         )
+    
+    profile_type = models.CharField(
+        max_length=10,
+        choices=PROFILE_TYPE_CHOICES,
+        default='public',
+        help_text="Controls profile visibility: public or private."
+    )
+    
+    bio = models.TextField(
+        max_length=350,
+        blank=True,
+        null=True,
+        help_text="User's bio or description."
+    )
     
     interests = models.ManyToManyField(
         Interest,
@@ -69,9 +90,6 @@ class User(AbstractUser):
         help_text="timestamp of delete "
     ) 
     
-
-    def __str__(self):
-        return self.username
 
     class Meta:
         verbose_name = "User"

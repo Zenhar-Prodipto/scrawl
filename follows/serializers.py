@@ -2,7 +2,7 @@ from rest_framework import serializers
 from .models import Follow
 from users.models import User
 
-class FollowSerializer(serializers.ModelSerializers):
+class FollowSerializer(serializers.ModelSerializer):
     class Meta:
         model = Follow
         fields = ['followed']  # Only need followed user ID for input

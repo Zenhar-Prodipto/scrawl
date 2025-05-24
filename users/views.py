@@ -66,6 +66,8 @@ class RegisterView(generics.CreateAPIView):
                     "last_name": user_data['last_name'],
                     "profile_picture":user_data['profile_picture'],
                     "interests": user_data['interests'], 
+                    "profile_type": user_data['profile_type'],
+                    "bio": user_data['bio'],
                     "access_token": str(refresh.access_token),
                     "refresh_token": str(refresh)
                 }
@@ -73,8 +75,6 @@ class RegisterView(generics.CreateAPIView):
             status=status.HTTP_201_CREATED
         )
         
-        
-
 class LoginView(generics.GenericAPIView):
     serializer_class = LoginSerializer
     permission_classes = [AllowAny]
@@ -180,7 +180,7 @@ class UserProfileView(generics.RetrieveUpdateDestroyAPIView):
             status=status.HTTP_404_NOT_FOUND
             )
         serializer = UpdateUserSerializer(user,data=request.data,partial=True)
-        
+
         try:
             serializer.is_valid(raise_exception=True)
             updated_user = serializer.save()

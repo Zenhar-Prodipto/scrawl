@@ -1,8 +1,8 @@
 from rest_framework import generics, status
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
-from .serializers import FollowRequestSerializerIncoming, FollowRequestSerializerOutgoing, FollowSerializer, UserFollowSerializer, SelfUserFollowSerializer
-from .services import create_follow_request, does_follow_request_exist, follow_requests_incoming, follow_requests_outgoing, follow_user, get_follower_count, get_following_count, unfollow_user,get_followers,get_following,check_follow_status
+from .serializers import FollowRequestCancelSerializer, FollowRequestSerializerIncoming, FollowRequestSerializerOutgoing, FollowRequestUpdateSerializer, FollowSerializer, UserFollowSerializer, SelfUserFollowSerializer
+from .services import cancel_follow_request, create_follow_request, does_follow_request_exist, follow_requests_incoming, follow_requests_outgoing, follow_user, get_follower_count, get_following_count, unfollow_user,get_followers,get_following,check_follow_status, update_follow_request
 from users.services import get_user_by_id  
 from users.models import User  
 from django.db import DatabaseError
@@ -408,6 +408,94 @@ class PendingFollowRequestsOutgoingView(generics.ListAPIView):
             return Response(
                 {"status": "error", "message": "Current user not found"},
                 status=status.HTTP_404_NOT_FOUND
+            )
+        except DatabaseError:
+            return Response(
+                {"status": "error", "message": "Database error occurred"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+        except Exception as e:
+            return Response(
+                {
+                    "status": "error",
+                    "message": f"An unexpected error occurred: {str(e)}"
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+            
+class FollowRequestUpdateView(generics.GenericAPIView):
+    serializer_class = FollowRequestUpdateSerializer
+    permission_classes = [IsAuthenticated]
+    
+    def post(self, request, req_id, *args, **kwargs):
+        try:
+            # Validate request body
+            serializer = self.get_serializer(data=request.data)
+            serializer.is_valid(raise_exception=True)
+            new_status = serializer.validated_data['status']
+            current_user = request.user
+
+            # Update the follow request
+            update_follow_request(current_user, req_id, new_status)
+
+            # Return appropriate success message
+            if new_status == 'accepted':
+                message = "Follow request accepted successfully"
+            else:  # denied
+                message = "Follow request denied successfully"
+
+            return Response(
+                {
+                    "status": "success",
+                    "message": message
+                },
+                status=status.HTTP_200_OK
+            )
+
+        except ValueError as e:
+            return Response(
+                {"status": "error", "message": str(e)},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        except DatabaseError:
+            return Response(
+                {"status": "error", "message": "Database error occurred"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+        except Exception as e:
+            return Response(
+                {
+                    "status": "error",
+                    "message": f"An unexpected error occurred: {str(e)}"
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+            
+class FollowRequestCancelView(generics.GenericAPIView):
+    serializer_class = FollowRequestCancelSerializer
+    permission_classes = [IsAuthenticated]
+    
+    def post(self, request, req_id, *args, **kwargs):
+        try:
+            # Validate request body (status will be 'cancelled')
+            serializer = self.get_serializer(data=request.data)
+            serializer.is_valid(raise_exception=True)
+            current_user = request.user
+            # Update the follow request
+            cancel_follow_request(current_user, req_id)
+
+            return Response(
+                {
+                    "status": "success",
+                    "message": "Follow request cancelled successfully"
+                },
+                status=status.HTTP_200_OK
+            )
+
+        except ValueError as e:
+            return Response(
+                {"status": "error", "message": str(e)},
+                status=status.HTTP_400_BAD_REQUEST
             )
         except DatabaseError:
             return Response(

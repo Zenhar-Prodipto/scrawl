@@ -41,3 +41,13 @@ class FollowRequestSerializerOutgoing(serializers.ModelSerializer):
     class Meta:
         model = FollowRequest
         fields = ['id', 'requester', 'target', 'status', 'created_at', 'updated_at', 'target_details']
+        
+class FollowRequestUpdateSerializer(serializers.Serializer):
+    status = serializers.ChoiceField(choices=['accepted', 'denied'], required=True)
+    def validate_status(self, value):
+        if value not in ['accepted', 'denied']:
+            raise serializers.ValidationError("Status must be either 'accepted' or 'denied'.")
+        return value
+    
+class FollowRequestCancelSerializer(serializers.Serializer):
+    status = serializers.ChoiceField(choices=['cancelled'], required=True)

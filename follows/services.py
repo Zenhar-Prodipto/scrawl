@@ -105,7 +105,7 @@ def follow_requests_incoming(target:User) -> list[FollowRequest]:
     """
     Fetch all pending follow requests where the user is the target.
     Args:
-        target_user (User): The user receiving the follow requests.
+        target (User): The user receiving the follow requests.
     Returns:
         list[FollowRequest]: Queryset of pending follow requests.
     """
@@ -135,5 +135,73 @@ def follow_requests_outgoing(requester:User) -> list[FollowRequest]:
         ).order_by('created_at')
         
         return follow_requests
+    except DatabaseError as e:
+        raise DatabaseError(f"Database error: {str(e)}")
+    
+
+def update_follow_request(current_user: User, req_id: int, new_status: str) -> None:
+    """
+    Update the status of a follow request (accept/deny).
+    Args:
+        current_user (User): The user attempting to update the request.
+        req_id (int): The ID of the FollowRequest to update.
+        new_status (str): Either 'accepted' or 'denied'.
+    Raises:
+        ValueError: If the request doesn't exist, user is unauthorized, or request isn't pending.
+        DatabaseError: If a database error occurs.
+    """
+    try:
+        # Fetch the follow request
+        follow_request = FollowRequest.objects.filter(id=req_id).first()
+        if not follow_request:
+            raise ValueError("Follow request does not exist.")
+
+        # Check if the current user is the target
+        if follow_request.target != current_user:
+            raise ValueError("You are not authorized to update this request.")
+
+        # Check if the request is pending
+        if follow_request.status != 'pending':
+            raise ValueError("This request cannot be updated as it is not pending.")
+
+        if new_status == 'accepted':
+            # Reuse follow_user to create the follow relationship
+            follow_user(follow_request.requester, follow_request.target.id)
+            # Delete the FollowRequest
+            follow_request.delete()
+        else:  # new_status == 'denied'
+            follow_request.status = 'denied'
+            follow_request.save()
+
+    except DatabaseError as e:
+        raise DatabaseError(f"Database error: {str(e)}")
+    
+def cancel_follow_request(current_user: User, req_id: int) -> None:
+    """
+    Cancel the outgoing follow request.
+    Args:
+        current_user (User): The user attempting to cancel the request.
+        req_id (int): The ID of the FollowRequest to update.
+    Raises:
+        ValueError: If the request doesn't exist, user is unauthorized, or request isn't pending.
+        DatabaseError: If a database error occurs.
+    """
+    try:
+        # Fetch the follow request
+        follow_request = FollowRequest.objects.filter(id=req_id).first()
+        if not follow_request:
+            raise ValueError("Follow request does not exist.")
+
+        # Check if the current user is the requester
+        if follow_request.requester != current_user:
+            raise ValueError("You are not authorized to cancel this request.")
+
+        # Check if the request is pending
+        if follow_request.status != 'pending':
+            raise ValueError("This request cannot be cancelled as it is not pending.")
+
+        follow_request.status = 'cancelled'
+        follow_request.save()
+
     except DatabaseError as e:
         raise DatabaseError(f"Database error: {str(e)}")

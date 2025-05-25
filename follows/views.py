@@ -1,8 +1,8 @@
 from rest_framework import generics, status
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
-from .serializers import FollowSerializer, UserFollowSerializer, SelfUserFollowSerializer
-from .services import create_follow_request, does_follow_request_exist, follow_user, get_follower_count, get_following_count, unfollow_user,get_followers,get_following,check_follow_status
+from .serializers import FollowRequestSerializerIncoming, FollowRequestSerializerOutgoing, FollowSerializer, UserFollowSerializer, SelfUserFollowSerializer
+from .services import create_follow_request, does_follow_request_exist, follow_requests_incoming, follow_requests_outgoing, follow_user, get_follower_count, get_following_count, unfollow_user,get_followers,get_following,check_follow_status
 from users.services import get_user_by_id  
 from users.models import User  
 from django.db import DatabaseError
@@ -334,5 +334,91 @@ class FollowStatusView(generics.GenericAPIView):
         except DatabaseError:
             return Response(
                 {"status": "error", "message": "Database error occurred"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+            
+        except Exception as e:
+            return Response(
+                {
+                    "status": "error",
+                    "message": f"An unexpected error occurred: {str(e)}"
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+    
+class PendingFollowRequestsIncomingView(generics.ListAPIView):
+    serializer_class = FollowRequestSerializerIncoming
+    permission_classes = [IsAuthenticated]
+    pagination_class = FollowPaginator
+    
+    def get_queryset(self):
+        current_user = self.request.user
+        return follow_requests_incoming(current_user)
+        
+    
+    def list(self, request, *args, **kwargs):
+        try:
+            queryset = self.get_queryset()
+            page = self.paginate_queryset(queryset)
+            serializer = self.get_serializer(page, many=True)
+            return self.get_paginated_response({
+                "status": "success",
+                "message": "Pending follow requests retrieved successfully",
+                "data": serializer.data
+            })
+        except User.DoesNotExist:
+            return Response(
+                {"status": "error", "message": "Current user not found"},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        except DatabaseError:
+            return Response(
+                {"status": "error", "message": "Database error occurred"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+        except Exception as e:
+            return Response(
+                {
+                    "status": "error",
+                    "message": f"An unexpected error occurred: {str(e)}"
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+            
+class PendingFollowRequestsOutgoingView(generics.ListAPIView):
+    serializer_class = FollowRequestSerializerOutgoing
+    permission_classes = [IsAuthenticated]
+    pagination_class = FollowPaginator
+    
+    def get_queryset(self):
+        current_user = self.request.user
+        return follow_requests_outgoing(current_user)
+    
+    def list(self, request, *args, **kwargs):
+        try:
+            queryset = self.get_queryset()
+            page = self.paginate_queryset(queryset)
+            serializer = self.get_serializer(page, many=True)
+            return self.get_paginated_response({
+                "status": "success",
+                "message": "Pending outgoing follow requests retrieved successfully",
+                "data": serializer.data
+            })
+        except User.DoesNotExist:
+            return Response(
+                {"status": "error", "message": "Current user not found"},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        except DatabaseError:
+            return Response(
+                {"status": "error", "message": "Database error occurred"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+        except Exception as e:
+            return Response(
+                {
+                    "status": "error",
+                    "message": f"An unexpected error occurred: {str(e)}"
+                },
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )

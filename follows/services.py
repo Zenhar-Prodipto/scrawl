@@ -100,3 +100,40 @@ def create_follow_request(requester: User, target_id: int) -> FollowRequest:
         raise User.DoesNotExist("Target user does not exist.")
     except DatabaseError as e:
         raise DatabaseError(f"Database error: {str(e)}")
+    
+def follow_requests_incoming(target:User) -> list[FollowRequest]:
+    """
+    Fetch all pending follow requests where the user is the target.
+    Args:
+        target_user (User): The user receiving the follow requests.
+    Returns:
+        list[FollowRequest]: Queryset of pending follow requests.
+    """
+    try:
+        follow_requests = FollowRequest.objects.filter(
+            target=target,
+            status='pending'
+        ).order_by('created_at')
+
+        return follow_requests
+    except DatabaseError as e:
+        raise DatabaseError(f"Database error: {str(e)}")
+    
+    
+def follow_requests_outgoing(requester:User) -> list[FollowRequest]:
+    """
+    Fetch all pending follow requests sent by the user.
+    Args:
+        requester (User): The user who sent the follow requests.
+    Returns:
+        list[FollowRequest]: Queryset of pending follow requests.
+    """
+    try:
+        follow_requests = FollowRequest.objects.filter(
+            requester=requester,
+            status='pending'
+        ).order_by('created_at')
+        
+        return follow_requests
+    except DatabaseError as e:
+        raise DatabaseError(f"Database error: {str(e)}")

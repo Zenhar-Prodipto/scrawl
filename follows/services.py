@@ -1,4 +1,4 @@
-from follows.models import Follow
+from follows.models import Follow, FollowRequest
 from users.models import User
 from django.db import DatabaseError
 from django.core.exceptions import ObjectDoesNotExist
@@ -72,6 +72,31 @@ def get_following_count(user_id: int) -> int:
         user = User.objects.get(id=user_id, is_deleted=False)
         return user.following.count()
     except User.DoesNotExist:                
+        raise User.DoesNotExist("Target user does not exist.")
+    except DatabaseError as e:
+        raise DatabaseError(f"Database error: {str(e)}")
+    
+def does_follow_request_exist(requester: User, target_id: int) -> bool:
+    try:
+        target_user = User.objects.get(id=target_id, is_deleted=False)
+        return FollowRequest.objects.filter(
+            requester=requester,
+            target=target_user,
+            status='pending'
+        ).exists()
+    except DatabaseError as e:
+        raise DatabaseError(f"Database error: {str(e)}")
+
+def create_follow_request(requester: User, target_id: int) -> FollowRequest:
+    try:
+        target_user = User.objects.get(id=target_id, is_deleted=False)
+        follow_request = FollowRequest.objects.create(
+            requester=requester,
+            target=target_user,
+            status='pending'
+        )
+        return follow_request
+    except User.DoesNotExist:
         raise User.DoesNotExist("Target user does not exist.")
     except DatabaseError as e:
         raise DatabaseError(f"Database error: {str(e)}")

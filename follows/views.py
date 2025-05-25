@@ -2,7 +2,7 @@ from rest_framework import generics, status
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from .serializers import FollowSerializer, UserFollowSerializer, SelfUserFollowSerializer
-from .services import follow_user, get_follower_count, get_following_count, unfollow_user,get_followers,get_following,check_follow_status
+from .services import create_follow_request, does_follow_request_exist, follow_user, get_follower_count, get_following_count, unfollow_user,get_followers,get_following,check_follow_status
 from users.services import get_user_by_id  
 from users.models import User  
 from django.db import DatabaseError
@@ -19,6 +19,34 @@ class FollowView(generics.GenericAPIView):
         
         try:
             serializer.is_valid(raise_exception=True)
+            target_user = get_user_by_id(user_id)
+            if target_user.profile_type == 'private':
+                follow_status = check_follow_status(current_user, user_id)
+                if follow_status:
+                    return Response(
+                        {"status": "error", "message": "you are already following this user"},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+                # check if current user has already sent a follow request
+                follow_requests_exists = does_follow_request_exist(current_user, user_id)
+                if follow_requests_exists:
+                    return Response(
+                        {"status": "error", "message": "You have already sent a follow request to this user"},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+                
+                #create a follow request
+                create_follow_request(current_user, user_id)
+                
+                return Response(
+                    {
+                        "status": "success",
+                        "message": "Follow request sent successfully",
+                        "data": UserFollowSerializer(target_user).data
+                    },
+                    status=status.HTTP_201_CREATED
+                )
+            
             follow = follow_user(current_user, user_id)
             target_user = User.objects.get(id=user_id, is_deleted=False)
             target_data = UserFollowSerializer(target_user).data
@@ -118,7 +146,6 @@ class FollowersView(generics.GenericAPIView):
                         {"status": "error", "message": "Cannot view followers of private profile"},
                         status=status.HTTP_403_FORBIDDEN
                     )
-            
             
             followers = get_followers(user_id)
             followers_count = get_follower_count(user_id)

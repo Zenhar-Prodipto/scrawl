@@ -27,7 +27,10 @@ def unfollow_user(user: User, target_id: int) -> None:
 def get_followers(user_id:int)->list[User]:
     try:
         user = User.objects.get(id=user_id, is_deleted=False)
-        followers = User.objects.filter(following__followed=user, is_deleted=False)
+        follow_relationships = user.followers.all()  # Queryset of Follow objects
+        # Extract the follower users
+        followers = User.objects.filter(id__in=follow_relationships.values('follower_id'), is_deleted=False)
+        return followers
         return followers
     except User.DoesNotExist:  # Specific
         raise User.DoesNotExist("Target user does not exist.")
@@ -37,7 +40,9 @@ def get_followers(user_id:int)->list[User]:
 def get_following(user_id:int)->list[User]:
     try:
         user = User.objects.get(id=user_id, is_deleted=False)
-        following = User.objects.filter(following__follower=user, is_deleted=False)
+        follow_relationships = user.following.all()  # Queryset of Follow objects
+        # Extract the followed users
+        following = User.objects.filter(id__in=follow_relationships.values('followed_id'), is_deleted=False)
         return following
     except User.DoesNotExist:  # Specific
         raise User.DoesNotExist("Target user does not exist.")
@@ -49,6 +54,24 @@ def check_follow_status(current_user: User, target_id: int) -> bool:
         target_user = User.objects.get(id=target_id, is_deleted=False)
         return Follow.objects.filter(follower=current_user, followed=target_user).exists()
     except User.DoesNotExist:
+        raise User.DoesNotExist("Target user does not exist.")
+    except DatabaseError as e:
+        raise DatabaseError(f"Database error: {str(e)}")
+    
+def get_follower_count(user_id: int) -> int:
+    try:
+        user = User.objects.get(id=user_id, is_deleted=False)
+        return user.followers.count()
+    except User.DoesNotExist:
+        raise User.DoesNotExist("Target user does not exist.")
+    except DatabaseError as e:
+        raise DatabaseError(f"Database error: {str(e)}")
+    
+def get_following_count(user_id: int) -> int:    
+    try:    
+        user = User.objects.get(id=user_id, is_deleted=False)
+        return user.following.count()
+    except User.DoesNotExist:                
         raise User.DoesNotExist("Target user does not exist.")
     except DatabaseError as e:
         raise DatabaseError(f"Database error: {str(e)}")

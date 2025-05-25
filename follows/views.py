@@ -1,10 +1,12 @@
 from rest_framework import generics, status
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
-from .serializers import FollowSerializer, UserFollowSerializer
-from .services import follow_user, unfollow_user,get_followers,get_following,check_follow_status
-from users.models import User  # Added
+from .serializers import FollowSerializer, UserFollowSerializer, SelfUserFollowSerializer
+from .services import follow_user, get_follower_count, get_following_count, unfollow_user,get_followers,get_following,check_follow_status
+from users.services import get_user_by_id  
+from users.models import User  
 from django.db import DatabaseError
+from .paginators import FollowPaginator
 from rest_framework import serializers
 
 class FollowView(generics.GenericAPIView):
@@ -64,8 +66,14 @@ class FollowView(generics.GenericAPIView):
     def delete(self, request, user_id, *args, **kwargs):
         current_user = request.user
         try:
+            follow_status = check_follow_status(current_user, user_id)
+            if not follow_status:
+                return Response(
+                    {"status": "error", "message": "You are not following this user"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
             # Get target user before unfollowing for response
-            target_user = User.objects.get(id=user_id, is_deleted=False)
+            target_user = get_user_by_id(user_id)
             unfollow_user(current_user, user_id)
             target_data = UserFollowSerializer(target_user).data 
             return Response(
@@ -95,19 +103,34 @@ class FollowView(generics.GenericAPIView):
 class FollowersView(generics.GenericAPIView):
     serializer_class = UserFollowSerializer
     permission_classes = [IsAuthenticated]
+    pagination_class = FollowPaginator
     
     def get(self, request, user_id, *args, **kwargs):
         try:
+            # Check if the target user exists and get their profile type
+            target_user = get_user_by_id(user_id)
+            # Privacy check: If private and not following, deny access
+            if target_user.profile_type == 'private':
+                is_following = check_follow_status(request.user, user_id)
+                
+                if not is_following and request.user != target_user:
+                    return Response(
+                        {"status": "error", "message": "Cannot view followers of private profile"},
+                        status=status.HTTP_403_FORBIDDEN
+                    )
+            
+            
             followers = get_followers(user_id)
-            serializer = self.get_serializer(followers, many=True)
-            return Response(
-                {
-                    "status": "success",
-                    "message": "Followers retrieved successfully",
-                    "data": serializer.data
-                },
-                status=status.HTTP_200_OK
-            )
+            followers_count = get_follower_count(user_id)
+            paginator = self.pagination_class() 
+            page = paginator.paginate_queryset(followers, request, self)
+            serializer = self.get_serializer(page, many=True)
+            return paginator.get_paginated_response({
+                "status": "success",
+                "message": "Followers retrieved successfully",
+                "data": serializer.data,
+                "followers_count": followers_count
+            })
         except User.DoesNotExist:
             return Response(
                 {"status": "error", "message": "Target user not found"},
@@ -131,19 +154,32 @@ class FollowersView(generics.GenericAPIView):
 class FollowingView(generics.GenericAPIView):
     serializer_class = UserFollowSerializer 
     permission_classes = [IsAuthenticated]
+    pagination_class = FollowPaginator
     
     def get(self, request, user_id, *args, **kwargs):
         try:
+            # Check if the target user exists and get their profile type
+            target_user = get_user_by_id(user_id)
+            
+            # Privacy check: If private and not following, deny access
+            if target_user.profile_type == 'private':
+                is_following = check_follow_status(request.user, user_id)
+                if not is_following and request.user != target_user:
+                    return Response(
+                        {"status": "error", "message": "Cannot view followers of private profile"},
+                        status=status.HTTP_403_FORBIDDEN
+                    )
             following = get_following(user_id)
-            serializer = self.get_serializer(following, many=True)
-            return Response(
-                {
-                    "status": "success",
-                    "message": "Following retrieved successfully",
-                    "data": serializer.data
-                },
-                status=status.HTTP_200_OK
-            )
+            following_count = get_following_count(user_id)
+            paginator = self.pagination_class() 
+            page = paginator.paginate_queryset(following, request, self)
+            serializer = self.get_serializer(page, many=True)
+            return paginator.get_paginated_response({
+                "status": "success",
+                "message": "Following retrieved successfully",
+                "data": serializer.data,
+                "following_count": following_count
+            })
         except User.DoesNotExist:
             return Response(
                 {"status": "error", "message": "Target user not found"},
@@ -164,6 +200,90 @@ class FollowingView(generics.GenericAPIView):
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
             
+
+            
+class SelfFollowersView(generics.ListAPIView):
+    serializer_class = SelfUserFollowSerializer
+    permission_classes = [IsAuthenticated]
+    pagination_class = FollowPaginator
+    
+    def get_queryset(self):
+        current_user = self.request.user
+        return get_followers(current_user.id)
+    
+    def list(self, request, *args, **kwargs):
+        try:
+            queryset = self.get_queryset()
+            followers_count = get_follower_count(self.request.user.id)
+            page = self.paginate_queryset(queryset)
+            serializer = self.get_serializer(page, many=True)
+            return self.get_paginated_response({
+                "status": "success",
+                "message": "Followers retrieved successfully",
+                "data": serializer.data,
+                "followers_count": followers_count
+            })
+        
+        except User.DoesNotExist:
+            return Response(
+                {"status": "error", "message": "Current user not found"},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        except DatabaseError:
+            return Response(
+                {"status": "error", "message": "Database error occurred"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+            
+        except Exception as e:
+            return Response(
+                {
+                    "status": "error",
+                    "message": f"An unexpected error occurred: {str(e)}"
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+class SelfFollowingView(generics.ListAPIView):
+    serializer_class = SelfUserFollowSerializer
+    permission_classes = [IsAuthenticated]
+    pagination_class = FollowPaginator
+    
+    def get_queryset(self):
+        current_user = self.request.user
+        return get_following(current_user.id)
+        
+    
+    def list(self,request,*args,**kwargs):
+        try:
+            queryset = self.get_queryset()
+            following_count = get_following_count(self.request.user.id)
+            page = self.paginate_queryset(queryset)
+            serializer = self.get_serializer(page, many=True)
+            return self.get_paginated_response({
+                "status": "success",
+                "message": "Following retrieved successfully",
+                "data": serializer.data,
+                "following_count": following_count
+            })
+        except User.DoesNotExist:
+            return Response(
+                {"status": "error", "message": "Current user not found"},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        except DatabaseError:
+            return Response(
+                {"status": "error", "message": "Database error occurred"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+        except Exception as e:
+            return Response(
+                {
+                    "status": "error",
+                    "message": f"An unexpected error occurred: {str(e)}"
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
 class FollowStatusView(generics.GenericAPIView):
     permission_classes = [IsAuthenticated]
     

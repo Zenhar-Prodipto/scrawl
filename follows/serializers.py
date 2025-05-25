@@ -17,6 +17,11 @@ class FollowSerializer(serializers.ModelSerializer):
 class UserFollowSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
-        fields = ['id', 'username', 'email', 'first_name', 'last_name', 'profile_picture']
+        fields = ['id', 'username', 'first_name', 'last_name', 'profile_picture']
+        
+class SelfUserFollowSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = User
+        fields = ['id', 'username', 'first_name', 'last_name', 'profile_picture','bio','profile_type']
         
         

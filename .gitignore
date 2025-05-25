@@ -12,3 +12,5 @@ project-related-stuff.txt
 
 # Ignores the data inside media directory
 media/
+
+temp/ 

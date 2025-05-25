@@ -39,45 +39,6 @@ def get_user_by_username(username):
 def match_password(user, password):
     return user.check_password(password) 
 
-
-# def update_user(user: User, validated_data: dict) -> User:
-#     """
-#     Update a User instance with validated data.
-#     Handles fields and interests delta. Returns updated user.
-#     """
-#     try:
-#         print("Validated Data from service layer",validated_data,flush=True)
-#         # Update regular fields if present
-#         if 'username' in validated_data:
-#             user.username = validated_data['username']
-#         if 'first_name' in validated_data:
-#             user.first_name = validated_data['first_name']
-#         if 'last_name' in validated_data:
-#             user.last_name = validated_data['last_name']
-#         if 'profile_picture' in validated_data:
-#             user.profile_picture = validated_data['profile_picture']
-#         if 'bio' in validated_data:
-#             user.bio = validated_data['bio']
-#         if 'profile_type' in validated_data:
-#             user.profile_type = validated_data['profile_type']
-
-#         # Handle interests delta
-#         interests_data = validated_data.get('interests', {})
-#         if 'add' in interests_data and interests_data['add']:
-#             user.interests.add(*interests_data['add'])
-#         if 'remove' in interests_data and interests_data['remove']:
-#             user.interests.remove(*interests_data['remove'])
-
-#         # Save the user
-#         user.save()
-#         return user
-
-#     except Interest.DoesNotExist:
-#         raise ValueError("One or more interest IDs do not exist.")
-#     except DatabaseError as e:
-#         raise DatabaseError(f"Database error during update: {str(e)}")
-#     except Exception as e:
-#         raise Exception(f"Unexpected error during update: {str(e)}")
     
 def update_user(user: User, validated_data: dict) -> User:
     """

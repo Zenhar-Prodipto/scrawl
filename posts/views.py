@@ -6,8 +6,9 @@ from rest_framework.views import APIView
 from rest_framework.permissions import IsAuthenticated
 from django.db import DatabaseError
 from django.core.exceptions import ObjectDoesNotExist
-from .services import get_post_by_id
-from .serializers import PostCreateSerializer, PostDetailSerializer
+from .services import get_post_by_id, get_user_posts
+from .serializers import PostCreateSerializer, PostDetailSerializer, PostListSerializer, PostUpdateSerializer
+from .paginators import PostPaginator
 
 class PostCreateView(APIView):
     permission_classes = [IsAuthenticated]
@@ -85,6 +86,103 @@ class PostDetailView(APIView):
                 },
                 status=status.HTTP_404_NOT_FOUND
             )
+        except DatabaseError as e:
+            return Response(
+                {
+                    "status": "error",
+                    "message": "Database error occurred",
+                    "errors": {"detail": str(e)}
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+        except Exception as e:
+            return Response(
+                {
+                    "status": "error",
+                    "message": "An unexpected error occurred",
+                    "errors": {"detail": str(e)}
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+            
+    def patch(self, request, post_id, *args, **kwargs):
+        try:
+            # Fetch the post
+            post = get_post_by_id(post_id, request.user)
+            
+            # Serialize and validate the update data
+            serializer = PostUpdateSerializer(post, data=request.data, context={'request': request}, partial=True)
+            if serializer.is_valid():
+                updated_post = serializer.save(user=request.user)
+                # Serialize the updated post for response
+                response_serializer = PostDetailSerializer(updated_post, context={'request': request})
+                return Response(
+                    {
+                        "status": "success",
+                        "message": "Post updated successfully",
+                        "data": response_serializer.data
+                    },
+                    status=status.HTTP_200_OK
+                )
+            return Response(
+                {
+                    "status": "error",
+                    "message": "Validation failed",
+                    "errors": serializer.errors
+                },
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        except ObjectDoesNotExist as e:
+            return Response(
+                {
+                    "status": "error",
+                    "message": str(e),
+                    "errors": {}
+                },
+                status=status.HTTP_404_NOT_FOUND
+            )
+        except DatabaseError as e:
+            return Response(
+                {
+                    "status": "error",
+                    "message": "Database error occurred",
+                    "errors": {"detail": str(e)}
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+        except Exception as e:
+            return Response(
+                {
+                    "status": "error",
+                    "message": "An unexpected error occurred",
+                    "errors": {"detail": str(e)}
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+            
+class PostListView(APIView):
+    permission_classes = [IsAuthenticated]
+    pagination_class = PostPaginator
+
+    def get(self, request, *args, **kwargs):
+        try:
+            # Fetch posts
+            posts = get_user_posts(request.user)
+            
+            # Paginate the queryset
+            paginator = self.pagination_class()
+            page = paginator.paginate_queryset(posts, request)
+            
+            # Serialize the paginated data
+            serializer = PostListSerializer(page, many=True, context={'request': request})
+            
+            # Return paginated response
+            return paginator.get_paginated_response({
+                "status": "success",
+                "message": "Posts retrieved successfully",
+                "data": serializer.data
+            })
+            
         except DatabaseError as e:
             return Response(
                 {

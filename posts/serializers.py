@@ -1,8 +1,9 @@
 from rest_framework import serializers
-from .models import Post, PostImage
+from users.models import User
+from .models import Post, PostImage, Tag, Like, Comment
 from .services import create_post
 
-class PostImageSerializer(serializers.ModelSerializer):
+class PostImageCreateSerializer(serializers.ModelSerializer):
     class Meta:
         model = PostImage
         fields = ['image_url', 'order']
@@ -13,7 +14,7 @@ class PostImageSerializer(serializers.ModelSerializer):
         return value
 
 class PostCreateSerializer(serializers.ModelSerializer):
-    post_images = PostImageSerializer(many=True, required=False)
+    post_images = PostImageCreateSerializer(many=True, required=False)
     tags = serializers.ListField(
         child=serializers.CharField(max_length=50, allow_blank=False, trim_whitespace=True),
         min_length=1,
@@ -47,3 +48,56 @@ class PostCreateSerializer(serializers.ModelSerializer):
         validated_data = dict(self.validated_data)
         tags_data = validated_data.pop('tags')
         return create_post(user, validated_data, tags_data)
+    
+
+class UserPostSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = User
+        fields = ['id', 'username', 'first_name', 'last_name', 'profile_picture','bio']
+    
+class TagSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Tag
+        fields = ['name']
+
+class PostImageGetSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = PostImage
+        fields = ['id','image_url', 'order']
+
+class LikeSerializer(serializers.ModelSerializer):
+    user = UserPostSerializer(read_only=True)
+
+    class Meta:
+        model = Like
+        fields = ['id','user', 'created_at']
+
+class CommentSerializer(serializers.ModelSerializer):
+    user = UserPostSerializer(read_only=True)
+
+    class Meta:
+        model = Comment
+        fields = ['id', 'user', 'text', 'created_at']
+
+class PostDetailSerializer(serializers.ModelSerializer):
+    post_images = PostImageGetSerializer(many=True, read_only=True)
+    tags = TagSerializer(many=True, read_only=True)
+    likes = LikeSerializer(many=True, read_only=True)
+    comments = CommentSerializer(many=True, read_only=True)
+    liked_by_user = serializers.SerializerMethodField()
+    total_likes = serializers.SerializerMethodField()
+    total_comments = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Post
+        fields = ['id', 'text', 'tags', 'privacy', 'post_images', 'likes', 'liked_by_user', 'comments','total_likes','total_comments', 'created_at', 'updated_at']
+
+    def get_liked_by_user(self, obj):
+        user = self.context['request'].user
+        return Like.objects.filter(post=obj, user=user).exists()
+    
+    def get_total_likes(self, obj):
+        return obj.likes.count()
+
+    def get_total_comments(self, obj):
+        return obj.comments.count()

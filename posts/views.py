@@ -5,7 +5,9 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.permissions import IsAuthenticated
 from django.db import DatabaseError
-from .serializers import PostCreateSerializer
+from django.core.exceptions import ObjectDoesNotExist
+from .services import get_post_by_id
+from .serializers import PostCreateSerializer, PostDetailSerializer
 
 class PostCreateView(APIView):
     permission_classes = [IsAuthenticated]
@@ -39,6 +41,49 @@ class PostCreateView(APIView):
                     "errors": {}
                 },
                 status=status.HTTP_400_BAD_REQUEST
+            )
+        except DatabaseError as e:
+            return Response(
+                {
+                    "status": "error",
+                    "message": "Database error occurred",
+                    "errors": {"detail": str(e)}
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+        except Exception as e:
+            return Response(
+                {
+                    "status": "error",
+                    "message": "An unexpected error occurred",
+                    "errors": {"detail": str(e)}
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+            
+class PostDetailView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, post_id, *args, **kwargs):
+        try:
+            post = get_post_by_id(post_id, request.user)
+            serializer = PostDetailSerializer(post, context={'request': request})
+            return Response(
+                {
+                    "status": "success",
+                    "message": "Post retrieved successfully",
+                    "data": serializer.data
+                },
+                status=status.HTTP_200_OK
+            )
+        except ObjectDoesNotExist as e:
+            return Response(
+                {
+                    "status": "error",
+                    "message": str(e),
+                    "errors": {}
+                },
+                status=status.HTTP_404_NOT_FOUND
             )
         except DatabaseError as e:
             return Response(

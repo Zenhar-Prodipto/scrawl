@@ -160,6 +160,50 @@ class PostDetailView(APIView):
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
             
+    def delete(self, request, post_id, *args, **kwargs):
+        try:
+            # Fetch the post
+            post = get_post_by_id(post_id, request.user)
+            
+            # Delete the post (cascades to related objects)
+            post.delete()
+            
+            return Response(
+                {
+                    "status": "success",
+                    "message": "Post deleted successfully",
+                    "data": {}
+                },
+                status=status.HTTP_200_OK
+            )
+        except ObjectDoesNotExist as e:
+            return Response(
+                {
+                    "status": "error",
+                    "message": str(e),
+                    "errors": {}
+                },
+                status=status.HTTP_404_NOT_FOUND
+            )
+        except DatabaseError as e:
+            return Response(
+                {
+                    "status": "error",
+                    "message": "Database error occurred",
+                    "errors": {"detail": str(e)}
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+        except Exception as e:
+            return Response(
+                {
+                    "status": "error",
+                    "message": "An unexpected error occurred",
+                    "errors": {"detail": str(e)}
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+            
 class PostListView(APIView):
     permission_classes = [IsAuthenticated]
     pagination_class = PostPaginator

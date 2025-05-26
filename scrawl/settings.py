@@ -134,7 +134,7 @@ REST_FRAMEWORK = {
 }
 
 SIMPLE_JWT = {
-    'ACCESS_TOKEN_LIFETIME': timedelta(days=1),  # 1-day expiry
+    'ACCESS_TOKEN_LIFETIME': timedelta(days=30),  # 1-day expiry
     'REFRESH_TOKEN_LIFETIME': timedelta(days=7),  # Optional: refresh token lasts longer
     'BLACKLIST_AFTER_ROTATION': True,
 }

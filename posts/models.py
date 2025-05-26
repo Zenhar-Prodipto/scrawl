@@ -1,6 +1,12 @@
 from django.db import models
 from users.models import User
 
+class Tag(models.Model):
+    name = models.CharField(max_length=50, unique=True)
+
+    def __str__(self):
+        return self.name
+
 class Post(models.Model):
     PRIVACY_CHOICES = (
         ('public', 'Public'),
@@ -10,7 +16,7 @@ class Post(models.Model):
     id = models.AutoField(primary_key=True)
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='posts')
     text = models.TextField(blank=True, default='')
-    tag = models.CharField(max_length=50, blank=False, null=False)  # Mandatory tag
+    tags = models.ManyToManyField(Tag, related_name='posts')
     privacy = models.CharField(max_length=10, choices=PRIVACY_CHOICES, default='public')
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -39,6 +45,8 @@ class PostImage(models.Model):
 
     def __str__(self):
         return f"Image for Post {self.post.id} (Order: {self.order})"
+    
+
     
 class Like(models.Model):
     id = models.AutoField(primary_key=True)

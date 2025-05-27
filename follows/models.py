@@ -18,6 +18,11 @@ class Follow(models.Model):
         verbose_name='Followed',
         help_text='The user being followed.'
     )
+    
+    is_super_follower = models.BooleanField(
+        default=False,
+        help_text='Indicates if the follower is a super follower, granting access to private posts.'
+    )
     created_at = models.DateTimeField(
         auto_now_add=True,
         help_text='Timestamp of when the follow was created.'

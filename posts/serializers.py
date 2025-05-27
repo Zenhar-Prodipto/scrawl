@@ -225,3 +225,12 @@ class CommentCreateSerializer(serializers.Serializer):
         required=True,
         help_text="The text content of the comment."
     )
+    
+class CommentUpdateSerializer(serializers.Serializer):
+    text = serializers.CharField(
+        max_length=1000,
+        min_length=1,
+        required=False,
+        allow_blank=False,
+        help_text="The updated text content of the comment."
+    )

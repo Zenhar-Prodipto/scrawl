@@ -401,3 +401,49 @@ def check_if_comment_exists(requesting_user, post):
         raise DatabaseError(f"Database error while checking Comment existence: {str(e)}")
     except Exception as e:
         raise Exception(f"Unexpected error while checking Comment existence: {str(e)}")
+    
+def update_comment(comment, text):
+    """
+    Update the text of an existing comment.
+    Args:
+        comment (Comment): The comment instance to update.
+        text (str): The new text content.
+    Returns:
+        Comment: The updated comment instance.
+    Raises:
+        DatabaseError: If a database error occurs.
+        Exception: For unexpected errors.
+    """
+    try:
+        with transaction.atomic():
+            comment.text = text
+            comment.save()
+            return comment
+    except DatabaseError as e:
+        raise DatabaseError(f"Database error while updating comment: {str(e)}")
+    except Exception as e:
+        raise Exception(f"Unexpected error while updating comment: {str(e)}")
+    
+def get_comment_by_id(comment_id:int,post:Post)-> Comment:
+    """
+    Fetch a comment by ID, including related user data.
+    Args:
+        comment_id (int): The ID of the comment.
+        post (Post): The post to which the comment belongs.
+    Returns:
+        Comment: The comment instance with related user data.
+    Raises:
+        Comment.DoesNotExist: If the comment doesn't exist.
+        DatabaseError: If a database error occurs.
+        Exception: For unexpected errors.
+
+    """
+    try:
+        comment = Comment.objects.get(id=comment_id, post=post)
+        return comment
+    except Comment.DoesNotExist:
+        raise Comment.DoesNotExist("Comment not found.")
+    except DatabaseError as e:
+        raise DatabaseError(f"Database error while fetching comment: {str(e)}")
+    except Exception as e:
+        raise Exception(f"Unexpected error while fetching comment: {str(e)}")

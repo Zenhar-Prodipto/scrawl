@@ -6,7 +6,7 @@ from rest_framework.views import APIView
 from rest_framework.permissions import IsAuthenticated
 from django.db import DatabaseError
 from django.core.exceptions import ObjectDoesNotExist
-from .services import get_self_post_by_id, get_post_by_id, get_user_posts, check_like_eligibility, create_like
+from .services import check_if_like_exists, delete_like, get_self_post_by_id, get_post_by_id, get_user_posts, check_like_eligibility, create_like
 from .models import Post, Like, User
 from .serializers import LikeCreateSerializer
 from .serializers import PostCreateSerializer, PostDetailSerializer, PostListSerializer, PostUpdateSerializer
@@ -305,6 +305,63 @@ class LikePostView(APIView):
                 {
                     "status": "error",
                     "message": "User not found.",
+                    "errors": {}
+                },
+                status=status.HTTP_404_NOT_FOUND
+            )
+        except DatabaseError as e:
+            return Response(
+                {
+                    "status": "error",
+                    "message": "Database error occurred",
+                    "errors": {"detail": str(e)}
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+        except Exception as e:
+            return Response(
+                {
+                    "status": "error",
+                    "message": "An unexpected error occurred",
+                    "errors": {"detail": str(e)}
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+            
+    def delete(self, request, post_id, *args, **kwargs):
+        try:
+            # Fetch the post
+            post = get_post_by_id(post_id)
+            
+            # Check if the user has liked the post
+            like_exists = check_if_like_exists(request.user, post)
+            if not like_exists:
+                return Response(
+                    {
+                        "status": "error",
+                        "message": "You have not liked this post.",
+                        "errors": {}
+                    },
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            # Delete the like
+            delete_like(request.user, post)
+
+            return Response(
+                {
+                    "status": "success",
+                    "message": "Post unliked successfully",
+                    "data": {}
+                },
+                status=status.HTTP_200_OK
+            )
+
+        except Post.DoesNotExist:
+            return Response(
+                {
+                    "status": "error",
+                    "message": "Post not found.",
                     "errors": {}
                 },
                 status=status.HTTP_404_NOT_FOUND

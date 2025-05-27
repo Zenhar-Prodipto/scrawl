@@ -257,3 +257,43 @@ def create_like(requesting_user, post):
         raise DatabaseError(f"Database error while creating like: {str(e)}")
     except Exception as e:
         raise Exception(f"Unexpected error while creating like: {str(e)}")
+    
+def delete_like(requesting_user, post):
+    """
+    Delete a like for a post by the requesting user.
+    Args:
+        requesting_user (User): The user unliking the post.
+        post (Post): The post to unlike.
+    Raises:
+        DatabaseError: If a database error occurs.
+        Exception: For unexpected errors.
+    """
+    try:
+        with transaction.atomic():
+            like = Like.objects.filter(user=requesting_user, post=post).first()
+            if like:
+                like.delete()
+    except DatabaseError as e:
+        raise DatabaseError(f"Database error while deleting like: {str(e)}")
+    except Exception as e:
+        raise Exception(f"Unexpected error while deleting like: {str(e)}")
+    
+    
+def check_if_like_exists(requesting_user, post):
+    """
+    Check if a like exists for a post by the requesting user.
+    Args:
+        requesting_user (User): The user checking the like.
+        post (Post): The post to check.
+    Returns:
+        bool: True if the like exists, False otherwise.
+    Raises:
+        DatabaseError: If a database error occurs.
+        Exception: For unexpected errors.
+    """
+    try:
+        return Like.objects.filter(user=requesting_user, post=post).exists()
+    except DatabaseError as e:
+        raise DatabaseError(f"Database error while checking like existence: {str(e)}")
+    except Exception as e:
+        raise Exception(f"Unexpected error while checking like existence: {str(e)}")

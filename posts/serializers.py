@@ -217,3 +217,11 @@ class LikeCreateSerializer(serializers.Serializer):
         if not value:
             raise serializers.ValidationError("Like must be set to true to like a post.")
         return value
+    
+class CommentCreateSerializer(serializers.Serializer):
+    text = serializers.CharField(
+        max_length=500,  
+        min_length=1,
+        required=True,
+        help_text="The text content of the comment."
+    )

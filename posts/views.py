@@ -6,7 +6,7 @@ from rest_framework.views import APIView
 from rest_framework.permissions import IsAuthenticated
 from django.db import DatabaseError
 from django.core.exceptions import ObjectDoesNotExist
-from .services import check_if_like_exists, delete_like, get_self_post_by_id, get_post_by_id, get_user_posts,check_like_eligibility, create_like, create_comment, check_comment_eligibility, get_comment_by_id, update_comment
+from .services import check_if_like_exists, delete_like, get_self_post_by_id, get_post_by_id, get_user_posts,check_like_eligibility, create_like, create_comment, check_comment_eligibility, get_comment_by_id, update_comment, delete_comment
 from .models import Post, Like, User, Comment
 from .serializers import LikeCreateSerializer
 from .serializers import PostCreateSerializer, PostDetailSerializer, PostListSerializer, PostUpdateSerializer, LikeCreateSerializer, CommentCreateSerializer, CommentUpdateSerializer
@@ -520,6 +520,98 @@ class CommentPostView(APIView):
                     "data": {"comment_id": updated_comment.id, "text": updated_comment.text}
                 },
                 status=status.HTTP_200_OK
+            )
+
+        except Comment.DoesNotExist:
+            return Response(
+                {
+                    "status": "error",
+                    "message": "Comment not found.",
+                    "errors": {}
+                },
+                status=status.HTTP_404_NOT_FOUND
+            )
+        except Post.DoesNotExist:
+            return Response(
+                {
+                    "status": "error",
+                    "message": "Post not found.",
+                    "errors": {}
+                },
+                status=status.HTTP_404_NOT_FOUND
+            )
+        except DatabaseError as e:
+            return Response(
+                {
+                    "status": "error",
+                    "message": "Database error occurred",
+                    "errors": {"detail": str(e)}
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+        except Exception as e:
+            return Response(
+                {
+                    "status": "error",
+                    "message": "An unexpected error occurred",
+                    "errors": {"detail": str(e)}
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+            
+    def delete(self, request, post_id, comment_id, *args, **kwargs):
+        try:
+            # Fetch the post
+            post = get_post_by_id(post_id)
+            
+            # Fetch the comment
+            comment = get_comment_by_id(comment_id, post)
+            
+            # Check if the requesting user is the post owner (can delete any comment)
+            if request.user == post.user:
+                delete_comment(comment)
+                return Response(
+                    {
+                        "status": "success",
+                        "message": "Comment deleted successfully",
+                        "data": {}
+                    },
+                    status=status.HTTP_200_OK
+                )
+                
+            #print the comment I get from the database to see data for debugging
+            print("Comment fetched for deletion:", comment, flush=True)
+            
+            # If not the post owner, check if the user is the comment creator
+            if request.user == comment.user:
+                # Check eligibility for non-owners
+                if not check_comment_eligibility(request.user, post):
+                    return Response(
+                        {
+                            "status": "error",
+                            "message": "You are not eligible to delete this comment.",
+                            "errors": {}
+                        },
+                        status=status.HTTP_403_FORBIDDEN
+                    )
+                delete_comment(comment)
+                return Response(
+                    {
+                        "status": "success",
+                        "message": "Comment deleted successfully",
+                        "data": {}
+                    },
+                    status=status.HTTP_200_OK
+                )
+
+            # If neither post owner nor comment creator, deny access
+            return Response(
+                {
+                    "status": "error",
+                    "message": "You are not authorized to delete this comment.",
+                    "errors": {}
+                },
+                status=status.HTTP_403_FORBIDDEN
             )
 
         except Comment.DoesNotExist:

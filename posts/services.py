@@ -447,3 +447,21 @@ def get_comment_by_id(comment_id:int,post:Post)-> Comment:
         raise DatabaseError(f"Database error while fetching comment: {str(e)}")
     except Exception as e:
         raise Exception(f"Unexpected error while fetching comment: {str(e)}")
+    
+    
+def delete_comment(comment):
+    """
+    Delete an existing comment.
+    Args:
+        comment (Comment): The comment instance to delete.
+    Raises:
+        DatabaseError: If a database error occurs.
+        Exception: For unexpected errors.
+    """
+    try:
+        with transaction.atomic():
+            comment.delete()
+    except DatabaseError as e:
+        raise DatabaseError(f"Database error while deleting comment: {str(e)}")
+    except Exception as e:
+        raise Exception(f"Unexpected error while deleting comment: {str(e)}")

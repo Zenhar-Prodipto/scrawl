@@ -209,3 +209,11 @@ class PostUpdateSerializer(serializers.ModelSerializer):
         user = kwargs.pop('user')
         validated_data = dict(self.validated_data)
         return update_post(self.instance, user, validated_data)
+    
+class LikeCreateSerializer(serializers.Serializer):
+    like = serializers.BooleanField(default=True, required=False)
+
+    def validate_like(self, value):
+        if not value:
+            raise serializers.ValidationError("Like must be set to true to like a post.")
+        return value

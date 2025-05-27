@@ -1,5 +1,9 @@
 from django.db import DatabaseError, transaction
 from django.db.models import Prefetch
+
+from follows.services import check_follow_status, check_super_follower
+from users.models import User
+from users.services import get_user_by_id
 from .models import Post, PostImage, Tag, Like, Comment
 
 
@@ -40,7 +44,7 @@ def create_post(user, validated_data, tags_data):
         raise Exception(f"Unexpected error during post creation: {str(e)}")
     
     
-def get_post_by_id(post_id, user):
+def get_self_post_by_id(post_id, user):
     """
     Fetch a post by ID, ensuring it belongs to the authenticated user.
     Args:
@@ -68,7 +72,28 @@ def get_post_by_id(post_id, user):
         raise DatabaseError(f"Database error while fetching post: {str(e)}")
     except Exception as e:
         raise Exception(f"Unexpected error while fetching post: {str(e)}")
-    
+
+def get_post_by_id(post_id:int)-> Post:
+    """
+    Fetch a post by ID, including related data.
+    Args:
+        post_id (int): The ID of the post.
+    Returns:
+        Post: The post instance with related data.
+    Raises:
+        Post.DoesNotExist: If the post doesn't exist.
+        DatabaseError: If a database error occurs.
+        Exception: For unexpected errors.
+    """
+    try:
+        post = Post.objects.get(id=post_id)
+        return post
+    except Post.DoesNotExist:
+        raise Post.DoesNotExist("Post not found.")
+    except DatabaseError as e:
+        raise DatabaseError(f"Database error while fetching post: {str(e)}")
+    except Exception as e:
+        raise Exception(f"Unexpected error while fetching post: {str(e)}")
     
 def get_user_posts(user):
     """
@@ -152,3 +177,83 @@ def update_post(post, user, validated_data):
         raise DatabaseError(f"Database error during post update: {str(e)}")
     except Exception as e:
         raise Exception(f"Unexpected error during post update: {str(e)}")
+    
+def check_like_eligibility(requesting_user, post):
+    """
+    Check if the requesting user is eligible to like a post based on visibility rules.
+    Args:
+        requesting_user (User): The user attempting to like the post.
+        post (Post): The post to be liked.
+    Returns:
+        bool: True if eligible, False otherwise.
+    Raises:
+        User.DoesNotExist: If the post's user doesn't exist.
+        DatabaseError: If a database error occurs.
+    """
+    try:
+        target_user = post.user
+        
+        # Check if the user has already liked the post
+        if Like.objects.filter(user=requesting_user, post=post).exists():
+            return False  # Already liked, not eligible to like again
+        
+        # Check if the target user exists and is not deleted
+        target_user_exists= get_user_by_id(target_user.id)
+        if not target_user_exists:
+            raise User.DoesNotExist("Target user does not exist or has been deleted.")
+
+        # Check follow status and super follower status
+        is_following = check_follow_status(requesting_user, target_user.id)
+        is_super_follower = check_super_follower(requesting_user, target_user)
+        
+        print(f"requesting_user: {requesting_user.username}, target_user: {target_user.username}, target_user profile_type: {target_user.profile_type}, is_following: {is_following}, is_super_follower: {is_super_follower}", flush=True)
+
+        # Public profile rules
+        if target_user.profile_type =='public':
+            print(f"public profile rules: {target_user.profile_type}", flush=True)
+            if post.privacy == 'public':
+                print(f"public post rules: {post.privacy}", flush=True)
+                return True  # Anyone can like public posts on a public profile
+            elif post.privacy == 'private':
+                print(f"private post rules: {post.privacy}", flush=True)
+                return is_super_follower  # Only super followers can like private posts
+        
+        # Private profile rules
+        else:
+            print(f"private profile rules: {target_user.profile_type}", flush=True)
+            if not is_following:
+                return False  # Non-followers can't like anything on a private profile
+            if post.privacy == 'public':
+                return True  # Followers can like public posts on a private profile
+            elif post.privacy == 'private':
+                return is_super_follower  # Only super followers can like private posts
+        
+        return False  # Fallback (shouldn't reach here)
+
+    except User.DoesNotExist:
+        raise User.DoesNotExist("Target user does not exist.")
+    except DatabaseError as e:
+        raise DatabaseError(f"Database error while checking eligibility: {str(e)}")
+    except Exception as e:
+        raise Exception(f"Unexpected error while checking eligibility: {str(e)}")
+
+def create_like(requesting_user, post):
+    """
+    Create a new like for a post by the requesting user.
+    Args:
+        requesting_user (User): The user liking the post.
+        post (Post): The post to like.
+    Returns:
+        Like: The created like instance.
+    Raises:
+        DatabaseError: If a database error occurs.
+        Exception: For unexpected errors.
+    """
+    try:
+        with transaction.atomic():
+            like = Like.objects.create(user=requesting_user, post=post)
+            return like
+    except DatabaseError as e:
+        raise DatabaseError(f"Database error while creating like: {str(e)}")
+    except Exception as e:
+        raise Exception(f"Unexpected error while creating like: {str(e)}")

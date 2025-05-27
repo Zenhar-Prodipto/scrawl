@@ -6,7 +6,9 @@ from rest_framework.views import APIView
 from rest_framework.permissions import IsAuthenticated
 from django.db import DatabaseError
 from django.core.exceptions import ObjectDoesNotExist
-from .services import get_post_by_id, get_user_posts
+from .services import get_self_post_by_id, get_post_by_id, get_user_posts, check_like_eligibility, create_like
+from .models import Post, Like, User
+from .serializers import LikeCreateSerializer
 from .serializers import PostCreateSerializer, PostDetailSerializer, PostListSerializer, PostUpdateSerializer
 from .paginators import PostPaginator
 
@@ -67,7 +69,7 @@ class PostDetailView(APIView):
 
     def get(self, request, post_id, *args, **kwargs):
         try:
-            post = get_post_by_id(post_id, request.user)
+            post = get_self_post_by_id(post_id, request.user)
             serializer = PostDetailSerializer(post, context={'request': request})
             return Response(
                 {
@@ -108,7 +110,7 @@ class PostDetailView(APIView):
     def patch(self, request, post_id, *args, **kwargs):
         try:
             # Fetch the post
-            post = get_post_by_id(post_id, request.user)
+            post = get_self_post_by_id(post_id, request.user)
             
             # Serialize and validate the update data
             serializer = PostUpdateSerializer(post, data=request.data, context={'request': request}, partial=True)
@@ -163,7 +165,7 @@ class PostDetailView(APIView):
     def delete(self, request, post_id, *args, **kwargs):
         try:
             # Fetch the post
-            post = get_post_by_id(post_id, request.user)
+            post = get_self_post_by_id(post_id, request.user)
             
             # Delete the post (cascades to related objects)
             post.delete()
@@ -227,6 +229,86 @@ class PostListView(APIView):
                 "data": serializer.data
             })
             
+        except DatabaseError as e:
+            return Response(
+                {
+                    "status": "error",
+                    "message": "Database error occurred",
+                    "errors": {"detail": str(e)}
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+        except Exception as e:
+            return Response(
+                {
+                    "status": "error",
+                    "message": "An unexpected error occurred",
+                    "errors": {"detail": str(e)}
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+            
+class LikePostView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, post_id, *args, **kwargs):
+        try:
+            # Validate request data
+            serializer = LikeCreateSerializer(data=request.data)
+            if not serializer.is_valid():
+                return Response(
+                    {
+                        "status": "error",
+                        "message": "Validation failed",
+                        "errors": serializer.errors
+                    },
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            # Fetch the post
+            post = get_post_by_id(post_id)
+            
+            # Check eligibility to like the post
+            if not check_like_eligibility(request.user, post):
+                return Response(
+                    {
+                        "status": "error",
+                        "message": "You are not eligible to like this post.",
+                        "errors": {}
+                    },
+                    status=status.HTTP_403_FORBIDDEN
+                )
+
+            # Create the like
+            like = create_like(request.user, post)
+
+            return Response(
+                {
+                    "status": "success",
+                    "message": "Post liked successfully",
+                    "data": {"like_id": like.id}
+                },
+                status=status.HTTP_201_CREATED
+            )
+
+        except Post.DoesNotExist:
+            return Response(
+                {
+                    "status": "error",
+                    "message": "Post not found.",
+                    "errors": {}
+                },
+                status=status.HTTP_404_NOT_FOUND
+            )
+        except User.DoesNotExist as e:
+            return Response(
+                {
+                    "status": "error",
+                    "message": "User not found.",
+                    "errors": {}
+                },
+                status=status.HTTP_404_NOT_FOUND
+            )
         except DatabaseError as e:
             return Response(
                 {

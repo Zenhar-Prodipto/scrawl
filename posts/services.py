@@ -545,3 +545,18 @@ def check_save_eligibility(requesting_user, post):
         raise DatabaseError(f"Database error while checking eligibility: {str(e)}")
     except Exception as e:
         raise Exception(f"Unexpected error while checking eligibility: {str(e)}")
+    
+def get_user_saved_posts(user):
+    try:
+        # Fetch posts saved by the user, prefetch related data
+        saved_posts = Post.objects.filter(saves__user=user).prefetch_related(
+            'post_images',
+            'tags',
+            Prefetch('likes', queryset=Like.objects.select_related('user')),
+            Prefetch('comments', queryset=Comment.objects.select_related('user'))
+        ).order_by('-created_at')
+        return saved_posts
+    except DatabaseError as e:
+        raise DatabaseError(f"Database error while fetching saved posts: {str(e)}")
+    except Exception as e:
+        raise Exception(f"Unexpected error while fetching saved posts: {str(e)}")

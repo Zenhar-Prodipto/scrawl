@@ -6,7 +6,7 @@ from rest_framework.views import APIView
 from rest_framework.permissions import IsAuthenticated
 from django.db import DatabaseError
 from django.core.exceptions import ObjectDoesNotExist
-from .services import check_if_like_exists, check_save_eligibility, delete_like, get_self_post_by_id, get_post_by_id, get_user_posts,check_like_eligibility, create_like, create_comment, check_comment_eligibility, get_comment_by_id, update_comment, delete_comment, get_save_by_user_and_post, create_save, delete_save
+from .services import check_if_like_exists, check_save_eligibility, delete_like, get_self_post_by_id, get_post_by_id, get_user_posts,check_like_eligibility, create_like, create_comment, check_comment_eligibility, get_comment_by_id, get_user_saved_posts, update_comment, delete_comment, get_save_by_user_and_post, create_save, delete_save
 from .models import Post, Like, User, Comment
 from .serializers import LikeCreateSerializer
 from .serializers import PostCreateSerializer, PostDetailSerializer, PostListSerializer, PostUpdateSerializer, LikeCreateSerializer, CommentCreateSerializer, CommentUpdateSerializer
@@ -768,6 +768,48 @@ class SavePostView(APIView):
                 },
                 status=status.HTTP_404_NOT_FOUND
             )
+        except DatabaseError as e:
+            return Response(
+                {
+                    "status": "error",
+                    "message": "Database error occurred",
+                    "errors": {"detail": str(e)}
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+        except Exception as e:
+            return Response(
+                {
+                    "status": "error",
+                    "message": "An unexpected error occurred",
+                    "errors": {"detail": str(e)}
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+            
+class SavedPostListView(APIView):
+    permission_classes = [IsAuthenticated]
+    pagination_class = PostPaginator
+
+    def get(self, request, *args, **kwargs):
+        try:
+            # Fetch the user's saved posts
+            posts = get_user_saved_posts(request.user)
+            
+            # Paginate the queryset
+            paginator = self.pagination_class()
+            page = paginator.paginate_queryset(posts, request)
+            
+            # Serialize the paginated data
+            serializer = PostListSerializer(page, many=True, context={'request': request, 'user': request.user})
+            
+            # Return paginated response
+            return paginator.get_paginated_response({
+                "status": "success",
+                "message": "Saved posts retrieved successfully",
+                "data": serializer.data
+            })
+            
         except DatabaseError as e:
             return Response(
                 {

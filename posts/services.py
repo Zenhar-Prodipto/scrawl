@@ -4,7 +4,7 @@ from django.db.models import Prefetch
 from follows.services import check_follow_status, check_super_follower
 from users.models import User
 from users.services import get_user_by_id
-from .models import Post, PostImage, Tag, Like, Comment
+from .models import Post, PostImage, Tag, Like, Comment, Save
 
 
 def create_post(user, validated_data, tags_data):
@@ -465,3 +465,83 @@ def delete_comment(comment):
         raise DatabaseError(f"Database error while deleting comment: {str(e)}")
     except Exception as e:
         raise Exception(f"Unexpected error while deleting comment: {str(e)}")
+    
+def get_save_by_user_and_post(user, post):
+    try:
+        save = Save.objects.get(user=user, post=post)
+        return save
+    except Save.DoesNotExist:
+        return None
+    except DatabaseError as e:
+        raise DatabaseError(f"Database error while fetching save: {str(e)}")
+    except Exception as e:
+        raise Exception(f"Unexpected error while fetching save: {str(e)}")
+
+def create_save(user, post):
+    try:
+        with transaction.atomic():
+            save = Save.objects.create(user=user, post=post)
+            return save
+    except DatabaseError as e:
+        raise DatabaseError(f"Database error while creating save: {str(e)}")
+    except Exception as e:
+        raise Exception(f"Unexpected error while creating save: {str(e)}")
+
+def delete_save(user, post):
+    try:
+        with transaction.atomic():
+            save = get_save_by_user_and_post(user, post)
+            if save:
+                save.delete()
+    except DatabaseError as e:
+        raise DatabaseError(f"Database error while deleting save: {str(e)}")
+    except Exception as e:
+        raise Exception(f"Unexpected error while deleting save: {str(e)}")
+    
+def check_save_eligibility(requesting_user, post):
+    try:
+        target_user = post.user
+        
+        # Check if the target user exists and is not deleted
+        target_user_exists = get_user_by_id(target_user.id)
+        if not target_user_exists:
+            raise User.DoesNotExist("Target user does not exist or has been deleted.")
+
+        # Check follow status and super follower status
+        is_following = check_follow_status(requesting_user, target_user.id)
+        is_super_follower = check_super_follower(requesting_user, target_user)
+        
+        print(f"requesting_user: {requesting_user.username}, target_user: {target_user.username}, target_user profile_type: {target_user.profile_type}, is_following: {is_following}, is_super_follower: {is_super_follower}", flush=True)
+
+        # Allow saving own posts
+        if requesting_user == target_user:
+            return True
+
+        # Public profile rules
+        if target_user.profile_type == 'public':
+            print(f"public profile rules: {target_user.profile_type}", flush=True)
+            if post.privacy == 'public':
+                print(f"public post rules: {post.privacy}", flush=True)
+                return True  # Anyone can save public posts on a public profile
+            elif post.privacy == 'private':
+                print(f"private post rules: {post.privacy}", flush=True)
+                return is_super_follower  # Only super followers can save private posts
+        
+        # Private profile rules
+        else:
+            print(f"private profile rules: {target_user.profile_type}", flush=True)
+            if not is_following:
+                return False  # Non-followers can't save anything on a private profile
+            if post.privacy == 'public':
+                return True  # Followers can save public posts on a private profile
+            elif post.privacy == 'private':
+                return is_super_follower  # Only super followers can save private posts
+        
+        return False  # Fallback (shouldn't reach here)
+
+    except User.DoesNotExist:
+        raise User.DoesNotExist("Target user does not exist.")
+    except DatabaseError as e:
+        raise DatabaseError(f"Database error while checking eligibility: {str(e)}")
+    except Exception as e:
+        raise Exception(f"Unexpected error while checking eligibility: {str(e)}")

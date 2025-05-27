@@ -6,7 +6,7 @@ from rest_framework.views import APIView
 from rest_framework.permissions import IsAuthenticated
 from django.db import DatabaseError
 from django.core.exceptions import ObjectDoesNotExist
-from .services import check_if_like_exists, delete_like, get_self_post_by_id, get_post_by_id, get_user_posts,check_like_eligibility, create_like, create_comment, check_comment_eligibility, get_comment_by_id, update_comment, delete_comment
+from .services import check_if_like_exists, check_save_eligibility, delete_like, get_self_post_by_id, get_post_by_id, get_user_posts,check_like_eligibility, create_like, create_comment, check_comment_eligibility, get_comment_by_id, update_comment, delete_comment, get_save_by_user_and_post, create_save, delete_save
 from .models import Post, Like, User, Comment
 from .serializers import LikeCreateSerializer
 from .serializers import PostCreateSerializer, PostDetailSerializer, PostListSerializer, PostUpdateSerializer, LikeCreateSerializer, CommentCreateSerializer, CommentUpdateSerializer
@@ -623,6 +623,142 @@ class CommentPostView(APIView):
                 },
                 status=status.HTTP_404_NOT_FOUND
             )
+        except Post.DoesNotExist:
+            return Response(
+                {
+                    "status": "error",
+                    "message": "Post not found.",
+                    "errors": {}
+                },
+                status=status.HTTP_404_NOT_FOUND
+            )
+        except DatabaseError as e:
+            return Response(
+                {
+                    "status": "error",
+                    "message": "Database error occurred",
+                    "errors": {"detail": str(e)}
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+        except Exception as e:
+            return Response(
+                {
+                    "status": "error",
+                    "message": "An unexpected error occurred",
+                    "errors": {"detail": str(e)}
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+            
+class SavePostView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, post_id, *args, **kwargs):
+        try:
+            # Fetch the post
+            post = get_post_by_id(post_id)
+            
+            # Check eligibility (same as like/comment, allows self-saves)
+            if not check_save_eligibility(request.user, post):
+                return Response(
+                    {
+                        "status": "error",
+                        "message": "You are not eligible to save this post.",
+                        "errors": {}
+                    },
+                    status=status.HTTP_403_FORBIDDEN
+                )
+
+            # Check if already saved
+            if get_save_by_user_and_post(request.user, post):
+                return Response(
+                    {
+                        "status": "error",
+                        "message": "Post is already saved.",
+                        "errors": {}
+                    },
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            # Create save
+            create_save(request.user, post)
+            
+            return Response(
+                {
+                    "status": "success",
+                    "message": "Post saved successfully",
+                    "data": {"post_id": post.id}
+                },
+                status=status.HTTP_201_CREATED
+            )
+
+        except Post.DoesNotExist:
+            return Response(
+                {
+                    "status": "error",
+                    "message": "Post not found.",
+                    "errors": {}
+                },
+                status=status.HTTP_404_NOT_FOUND
+            )
+        except DatabaseError as e:
+            return Response(
+                {
+                    "status": "error",
+                    "message": "Database error occurred",
+                    "errors": {"detail": str(e)}
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+        except Exception as e:
+            return Response(
+                {
+                    "status": "error",
+                    "message": "An unexpected error occurred",
+                    "errors": {"detail": str(e)}
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+    def delete(self, request, post_id, *args, **kwargs):
+        try:
+            # Fetch the post
+            post = get_post_by_id(post_id)
+            
+            # Check if saved
+            if not get_save_by_user_and_post(request.user, post):
+                return Response(
+                    {
+                        "status": "error",
+                        "message": "Post is not saved.",
+                        "errors": {}
+                    },
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+                
+            if not check_save_eligibility(request.user, post):
+                return Response(
+                    {
+                        "status": "error",
+                        "message": "You are not eligible to save this post.",
+                        "errors": {}
+                    },
+                    status=status.HTTP_403_FORBIDDEN
+                )
+
+            # Delete save
+            delete_save(request.user, post)
+            
+            return Response(
+                {
+                    "status": "success",
+                    "message": "Post unsaved successfully",
+                    "data": {}
+                },
+                status=status.HTTP_200_OK
+            )
+
         except Post.DoesNotExist:
             return Response(
                 {

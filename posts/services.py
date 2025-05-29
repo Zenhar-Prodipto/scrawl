@@ -560,3 +560,89 @@ def get_user_saved_posts(user):
         raise DatabaseError(f"Database error while fetching saved posts: {str(e)}")
     except Exception as e:
         raise Exception(f"Unexpected error while fetching saved posts: {str(e)}")
+    
+def get_user_posts_by_id(user_id:int)->User:
+    """
+    Fetch all posts for a specified user ID, optimized for listing.
+    Args:
+        user_id (int): The ID of the user whose posts to fetch.
+    Returns:
+        QuerySet: A queryset of the user's posts.
+    Raises:
+        User.DoesNotExist: If the user doesn't exist.
+        DatabaseError: If a database error occurs.
+        Exception: For unexpected errors.
+    """
+    try:
+        user = User.objects.get(id=user_id)
+        return Post.objects.filter(user=user).prefetch_related(
+            'post_images',
+            'tags',
+            Prefetch('likes', queryset=Like.objects.select_related('user')),
+            Prefetch('comments', queryset=Comment.objects.select_related('user'))
+        ).order_by('-created_at')
+    except User.DoesNotExist:
+        raise User.DoesNotExist("User not found.")
+    except DatabaseError as e:
+        raise DatabaseError(f"Database error while fetching posts: {str(e)}")
+    except Exception as e:
+        raise Exception(f"Unexpected error while fetching posts: {str(e)}")
+
+def post_view_eligibility(requesting_user: User, post: Post) -> bool:
+    """
+    Check if the requesting user is eligible to view a post based on visibility rules.
+    Args:
+        requesting_user (User): The user attempting to view the post.
+        post (Post): The post to check.
+    Returns:
+        bool: True if eligible, False otherwise.
+    Raises:
+        User.DoesNotExist: If the post's user doesn't exist.
+        DatabaseError: If a database error occurs.
+    """
+    try:
+        target_user = post.user
+        
+        # Check if the target user exists and is not deleted
+        target_user_exists = get_user_by_id(target_user.id)
+        if not target_user_exists:
+            raise User.DoesNotExist("Target user does not exist or has been deleted.")
+
+        # Allow viewing own posts
+        if requesting_user == target_user:
+            return True
+
+        # Check follow status and super follower status
+        is_following = check_follow_status(requesting_user, target_user.id)
+        is_super_follower = check_super_follower(requesting_user, target_user)
+        
+        print(f"requesting_user: {requesting_user.username}, target_user: {target_user.username}, target_user profile_type: {target_user.profile_type}, is_following: {is_following}, is_super_follower: {is_super_follower}", flush=True)
+
+        # Public profile rules
+        if target_user.profile_type == 'public':
+            print(f"public profile rules: {target_user.profile_type}", flush=True)
+            if post.privacy == 'public':
+                print(f"public post rules: {post.privacy}", flush=True)
+                return True  # Anyone can view public posts on a public profile
+            elif post.privacy == 'private':
+                print(f"private post rules: {post.privacy}", flush=True)
+                return is_super_follower  # Only super followers can view private posts
+        
+        # Private profile rules
+        else:
+            print(f"private profile rules: {target_user.profile_type}", flush=True)
+            if not is_following:
+                return False  # Non-followers can't view anything on a private profile
+            if post.privacy == 'public':
+                return True  # Followers can view public posts on a private profile
+            elif post.privacy == 'private':
+                return is_super_follower  # Only super followers can view private posts
+        
+        return False  # Fallback (shouldn't reach here)
+
+    except User.DoesNotExist:
+        raise User.DoesNotExist("Target user does not exist.")
+    except DatabaseError as e:
+        raise DatabaseError(f"Database error while checking eligibility: {str(e)}")
+    except Exception as e:
+        raise Exception(f"Unexpected error while checking eligibility: {str(e)}")

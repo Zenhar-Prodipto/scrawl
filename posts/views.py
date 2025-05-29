@@ -6,7 +6,7 @@ from rest_framework.views import APIView
 from rest_framework.permissions import IsAuthenticated
 from django.db import DatabaseError
 from django.core.exceptions import ObjectDoesNotExist
-from .services import check_if_like_exists, check_save_eligibility, delete_like, get_self_post_by_id, get_post_by_id, get_user_posts,check_like_eligibility, create_like, create_comment, check_comment_eligibility, get_comment_by_id, get_user_saved_posts, update_comment, delete_comment, get_save_by_user_and_post, create_save, delete_save
+from .services import check_if_like_exists, check_save_eligibility, delete_like, get_self_post_by_id, get_post_by_id, get_user_posts,check_like_eligibility, create_like, create_comment, check_comment_eligibility, get_comment_by_id, get_user_saved_posts, update_comment, delete_comment, get_save_by_user_and_post, create_save, delete_save,get_user_posts_by_id,post_view_eligibility
 from .models import Post, Like, User, Comment
 from .serializers import LikeCreateSerializer
 from .serializers import PostCreateSerializer, PostDetailSerializer, PostListSerializer, PostUpdateSerializer, LikeCreateSerializer, CommentCreateSerializer, CommentUpdateSerializer
@@ -810,6 +810,142 @@ class SavedPostListView(APIView):
                 "data": serializer.data
             })
             
+        except DatabaseError as e:
+            return Response(
+                {
+                    "status": "error",
+                    "message": "Database error occurred",
+                    "errors": {"detail": str(e)}
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+        except Exception as e:
+            return Response(
+                {
+                    "status": "error",
+                    "message": "An unexpected error occurred",
+                    "errors": {"detail": str(e)}
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+            
+class UserPostListView(APIView):
+    permission_classes = [IsAuthenticated]
+    pagination_class = PostPaginator
+
+    def get(self, request, user_id, *args, **kwargs):
+        try:
+            # Fetch posts for the specified user
+            posts = get_user_posts_by_id(user_id)
+            
+            # Check eligibility for each post
+            eligible_posts = []
+            for post in posts:
+                if post_view_eligibility(request.user, post):
+                    eligible_posts.append(post)
+            
+            # Paginate the eligible posts
+            paginator = self.pagination_class()
+            page = paginator.paginate_queryset(eligible_posts, request)
+            
+            # Serialize the paginated data
+            serializer = PostListSerializer(page, many=True, context={'request': request, 'user': request.user})
+            
+            # Return paginated response
+            return paginator.get_paginated_response({
+                "status": "success",
+                "message": "User posts retrieved successfully",
+                "data": serializer.data
+            })
+            
+        except User.DoesNotExist:
+            return Response(
+                {
+                    "status": "error",
+                    "message": "User not found.",
+                    "errors": {}
+                },
+                status=status.HTTP_404_NOT_FOUND
+            )
+        except DatabaseError as e:
+            return Response(
+                {
+                    "status": "error",
+                    "message": "Database error occurred",
+                    "errors": {"detail": str(e)}
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+        except Exception as e:
+            return Response(
+                {
+                    "status": "error",
+                    "message": "An unexpected error occurred",
+                    "errors": {"detail": str(e)}
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+            
+class UserPostDetailView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, user_id, post_id, *args, **kwargs):
+        try:
+            # Fetch the post
+            post = get_post_by_id(post_id)
+            
+            # Verify the post belongs to the specified user
+            if post.user.id != user_id:
+                return Response(
+                    {
+                        "status": "error",
+                        "message": "Post does not belong to the specified user.",
+                        "errors": {}
+                    },
+                    status=status.HTTP_404_NOT_FOUND
+                )
+            
+            # Check eligibility to view the post
+            if not post_view_eligibility(request.user, post):
+                return Response(
+                    {
+                        "status": "error",
+                        "message": "You are not eligible to view this post.",
+                        "errors": {}
+                    },
+                    status=status.HTTP_403_FORBIDDEN
+                )
+            
+            # Serialize the post
+            serializer = PostDetailSerializer(post, context={'request': request})
+            
+            return Response(
+                {
+                    "status": "success",
+                    "message": "Post retrieved successfully",
+                    "data": serializer.data
+                },
+                status=status.HTTP_200_OK
+            )
+            
+        except Post.DoesNotExist:
+            return Response(
+                {
+                    "status": "error",
+                    "message": "Post not found.",
+                    "errors": {}
+                },
+                status=status.HTTP_404_NOT_FOUND
+            )
+        except User.DoesNotExist:
+            return Response(
+                {
+                    "status": "error",
+                    "message": "User not found.",
+                    "errors": {}
+                },
+                status=status.HTTP_404_NOT_FOUND
+            )
         except DatabaseError as e:
             return Response(
                 {

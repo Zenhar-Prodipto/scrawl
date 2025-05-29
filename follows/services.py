@@ -58,6 +58,19 @@ def check_follow_status(current_user: User, target_id: int) -> bool:
     except DatabaseError as e:
         raise DatabaseError(f"Database error: {str(e)}")
     
+def check_super_follower(requesting_user: User, target_user: User) -> bool:
+    try:
+        is_super_follower = Follow.objects.filter(
+            follower=requesting_user,
+            followed=target_user,
+            is_super_follower=True
+        ).exists()
+        return is_super_follower
+    except User.DoesNotExist:
+        raise User.DoesNotExist("Target user does not exist.")
+    except DatabaseError as e:
+        raise DatabaseError(f"Database error: {str(e)}")
+    
 def get_follower_count(user_id: int) -> int:
     try:
         user = User.objects.get(id=user_id, is_deleted=False)

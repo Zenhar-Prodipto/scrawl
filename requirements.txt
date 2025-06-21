@@ -9,3 +9,5 @@ tzdata==2025.1
 Pillow==11.1.0
 djangorestframework-simplejwt==5.5.0
 pyjwt==2.9.0
+redis==5.0.1
+django-redis==5.4.0

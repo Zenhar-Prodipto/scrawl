@@ -10,6 +10,7 @@ services:
       - "8000:8000"
     depends_on:
       - db
+      - redis
     env_file:
       - .env
 
@@ -26,5 +27,17 @@ services:
     ports:
       - "5434:5432"
 
+  redis:
+    image: redis:7.2
+    container_name: drf_scrawl_redis
+    restart: always
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    environment:
+      - REDIS_URL=${REDIS_URL}
+
 volumes:
   postgres_data:
+  redis_data:

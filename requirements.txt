@@ -11,3 +11,4 @@ djangorestframework-simplejwt==5.5.0
 pyjwt==2.9.0
 redis==5.0.1
 django-redis==5.4.0
+confluent-kafka==2.3.0

@@ -107,6 +107,24 @@ DATABASES = {
     
 }
 
+# Redis Cache Configuration
+CACHES = {
+    "default": {
+        "BACKEND": "django_redis.cache.RedisCache",
+        "LOCATION": os.getenv("REDIS_URL", "redis://redis:6379/1"),  # Fallback if .env missing
+        "OPTIONS": {
+            "CLIENT_CLASS": "django_redis.client.DefaultClient",
+        }
+    }
+}
+
+# Kafka Configuration
+KAFKA = {
+    'BOOTSTRAP_SERVERS': os.getenv('KAFKA_BROKER', 'drf_scrawl_kafka:9092'),
+    'SECURITY_PROTOCOL': 'PLAINTEXT',
+    'API_VERSION': (2, 3, 0)
+}
+
 
 # Password validation
 # https://docs.djangoproject.com/en/5.1/ref/settings/#auth-password-validators

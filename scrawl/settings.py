@@ -107,6 +107,8 @@ DATABASES = {
     
 }
 
+# Redis URL for direct client usage (e.g., in feed_service.py)
+REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379/1")
 # Redis Cache Configuration
 CACHES = {
     "default": {

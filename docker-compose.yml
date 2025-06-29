@@ -76,7 +76,6 @@ services:
       KAFKA_NUM_PARTITIONS: 3
       KAFKA_DEFAULT_REPLICATION_FACTOR: 1
       KAFKA_MIN_INSYNC_REPLICAS: 1
-      # Reduce startup time
       KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
       KAFKA_LOG_RETENTION_HOURS: 168
       KAFKA_LOG_SEGMENT_BYTES: 1073741824
@@ -91,7 +90,6 @@ services:
       retries: 10
       start_period: 30s
 
-  # Topic initialization service
   kafka-init:
     image: confluentinc/cp-kafka:7.5.0
     container_name: drf_scrawl_kafka_init
@@ -104,6 +102,7 @@ services:
         kafka-topics --create --bootstrap-server drf_scrawl_kafka:9092 --replication-factor 1 --partitions 3 --topic like.events --if-not-exists
         kafka-topics --create --bootstrap-server drf_scrawl_kafka:9092 --replication-factor 1 --partitions 3 --topic follow.events --if-not-exists  
         kafka-topics --create --bootstrap-server drf_scrawl_kafka:9092 --replication-factor 1 --partitions 3 --topic post.events --if-not-exists
+        kafka-topics --create --bootstrap-server drf_scrawl_kafka:9092 --replication-factor 1 --partitions 3 --topic feed_events_dlq --if-not-exists
         echo 'Topics created successfully'
         kafka-topics --bootstrap-server drf_scrawl_kafka:9092 --list
       "
@@ -124,6 +123,24 @@ services:
       - .env
     entrypoint: ["/app/entrypoint.sh"]
     command: ["python", "-u", "/app/scrawl/consumers.py"]
+    restart: unless-stopped
+
+  feed-consumer:
+    build: .
+    container_name: drf_scrawl_feed_consumer
+    volumes:
+      - .:/app
+    depends_on:
+      db:
+        condition: service_started
+      redis:
+        condition: service_started
+      kafka:
+        condition: service_healthy
+    env_file:
+      - .env
+    entrypoint: ["/app/entrypoint.sh"]
+    command: ["python", "-u", "/app/scrawl/feed_consumer.py"]
     restart: unless-stopped
 
 volumes:

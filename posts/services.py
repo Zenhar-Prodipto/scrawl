@@ -1,15 +1,52 @@
+from datetime import datetime
 from django.db import DatabaseError, transaction
 from django.db.models import Prefetch
-
 from follows.services import check_follow_status, check_super_follower
 from users.models import User
 from users.services import get_user_by_id
 from .models import Post, PostImage, Tag, Like, Comment, Save
+from scrawl.config.kafka_config import producer, delivery_report
+import json
 
+# def create_post(user, validated_data, tags_data):
+#     """
+#     Create a new post with associated images and tags.
+#     Args:
+#         user (User): The authenticated user creating the post.
+#         validated_data (dict): Validated data containing text, privacy, and post_images.
+#         tags_data (list): List of tag names.
+#     Returns:
+#         Post: The created post instance.
+#     Raises:
+#         DatabaseError: If a database error occurs.
+#         Exception: For unexpected errors.
+#     """
+#     try:
+#         post_images_data = validated_data.pop('post_images', [])
 
+#         with transaction.atomic():
+#             # Create the post
+#             post = Post.objects.create(user=user, **validated_data)
+
+#             # Create or fetch tags and associate them with the post
+#             for tag_name in tags_data:
+#                 tag, _ = Tag.objects.get_or_create(name=tag_name.strip())
+#                 post.tags.add(tag)
+
+#             # Create post images
+#             for image_data in post_images_data:
+#                 PostImage.objects.create(post=post, **image_data)
+
+#             return post
+
+#     except DatabaseError as e:
+#         raise DatabaseError(f"Database error during post creation: {str(e)}")
+#     except Exception as e:
+#         raise Exception(f"Unexpected error during post creation: {str(e)}")
+    
 def create_post(user, validated_data, tags_data):
     """
-    Create a new post with associated images and tags.
+    Create a new post with associated images and tags. 
     Args:
         user (User): The authenticated user creating the post.
         validated_data (dict): Validated data containing text, privacy, and post_images.
@@ -24,25 +61,35 @@ def create_post(user, validated_data, tags_data):
         post_images_data = validated_data.pop('post_images', [])
 
         with transaction.atomic():
-            # Create the post
             post = Post.objects.create(user=user, **validated_data)
 
-            # Create or fetch tags and associate them with the post
             for tag_name in tags_data:
                 tag, _ = Tag.objects.get_or_create(name=tag_name.strip())
                 post.tags.add(tag)
 
-            # Create post images
             for image_data in post_images_data:
                 PostImage.objects.create(post=post, **image_data)
 
-            return post
+            # Publish post event
+            event = {
+                "event_type": "post.created",
+                "post_id": post.id,
+                "user_id": user.id,
+                "created_at": post.created_at.isoformat(),
+                "privacy": post.privacy
+            }
+            producer.produce(
+                "post.events",
+                value=json.dumps(event).encode('utf-8'),
+                callback=delivery_report
+            )
+            producer.flush()  # Ensure delivery (remove in prod)
 
+            return post
     except DatabaseError as e:
         raise DatabaseError(f"Database error during post creation: {str(e)}")
     except Exception as e:
         raise Exception(f"Unexpected error during post creation: {str(e)}")
-    
     
 def get_self_post_by_id(post_id, user):
     """
@@ -119,64 +166,152 @@ def get_user_posts(user):
         raise Exception(f"Unexpected error while fetching posts: {str(e)}")
     
     
+# def update_post(post, user, validated_data):
+#     """
+#     Update a post's text, privacy, tags, and images.
+#     Args:
+#         post (Post): The post instance to update.
+#         user (User): The authenticated user.
+#         validated_data (dict): Validated data containing fields to update.
+#     Returns:
+#         Post: The updated post instance.
+#     Raises:
+#         DatabaseError: If a database error occurs.
+#         Exception: For unexpected errors.
+#     """
+#     try:
+#         with transaction.atomic():
+#             # Update text and privacy if provided
+#             if 'text' in validated_data:
+#                 post.text = validated_data['text']
+#             if 'privacy' in validated_data:
+#                 post.privacy = validated_data['privacy']
+
+#             # Handle tags
+#             tags_to_add = validated_data.get('tags_to_add', [])
+#             tags_to_remove = validated_data.get('tags_to_remove', [])
+
+#             # Add new tags
+#             for tag_name in tags_to_add:
+#                 tag, _ = Tag.objects.get_or_create(name=tag_name.strip())
+#                 post.tags.add(tag)
+
+#             # Remove tags
+#             for tag_name in tags_to_remove:
+#                 try:
+#                     tag = Tag.objects.get(name=tag_name.strip())
+#                     post.tags.remove(tag)
+#                 except Tag.DoesNotExist:
+#                     pass  # Tag doesn't exist, skip
+
+#             # Handle images
+#             images_to_add = validated_data.get('post_images_to_add', [])
+#             images_to_remove = validated_data.get('post_images_to_remove', [])
+
+#             # Remove images
+#             if images_to_remove:
+#                 PostImage.objects.filter(id__in=images_to_remove, post=post).delete()
+
+#             # Add new images
+#             for image_data in images_to_add:
+#                 PostImage.objects.create(post=post, **image_data)
+
+#             # Save the post
+#             post.save()
+#             return post
+
+#     except DatabaseError as e:
+#         raise DatabaseError(f"Database error during post update: {str(e)}")
+#     except Exception as e:
+#         raise Exception(f"Unexpected error during post update: {str(e)}")
+
+
 def update_post(post, user, validated_data):
     """
     Update a post's text, privacy, tags, and images.
-    Args:
-        post (Post): The post instance to update.
-        user (User): The authenticated user.
-        validated_data (dict): Validated data containing fields to update.
-    Returns:
-        Post: The updated post instance.
-    Raises:
-        DatabaseError: If a database error occurs.
-        Exception: For unexpected errors.
     """
     try:
         with transaction.atomic():
-            # Update text and privacy if provided
             if 'text' in validated_data:
                 post.text = validated_data['text']
             if 'privacy' in validated_data:
                 post.privacy = validated_data['privacy']
 
-            # Handle tags
             tags_to_add = validated_data.get('tags_to_add', [])
             tags_to_remove = validated_data.get('tags_to_remove', [])
 
-            # Add new tags
             for tag_name in tags_to_add:
                 tag, _ = Tag.objects.get_or_create(name=tag_name.strip())
                 post.tags.add(tag)
 
-            # Remove tags
             for tag_name in tags_to_remove:
                 try:
                     tag = Tag.objects.get(name=tag_name.strip())
                     post.tags.remove(tag)
                 except Tag.DoesNotExist:
-                    pass  # Tag doesn't exist, skip
+                    pass
 
-            # Handle images
             images_to_add = validated_data.get('post_images_to_add', [])
             images_to_remove = validated_data.get('post_images_to_remove', [])
 
-            # Remove images
             if images_to_remove:
                 PostImage.objects.filter(id__in=images_to_remove, post=post).delete()
 
-            # Add new images
             for image_data in images_to_add:
                 PostImage.objects.create(post=post, **image_data)
 
-            # Save the post
             post.save()
-            return post
 
+            # Publish update event
+            event = {
+                "event_type": "post.updated",
+                "post_id": post.id,
+                "user_id": user.id,
+                "created_at": post.updated_at.isoformat() if hasattr(post, 'updated_at') else post.created_at.isoformat(),
+                "privacy": post.privacy
+            }
+            producer.produce(
+                "post.events",
+                value=json.dumps(event).encode('utf-8'),
+                callback=delivery_report
+            )
+            producer.flush()  # Ensure delivery (remove in prod)
+
+            return post
     except DatabaseError as e:
         raise DatabaseError(f"Database error during post update: {str(e)}")
     except Exception as e:
         raise Exception(f"Unexpected error during post update: {str(e)}")
+    
+    
+def delete_post(post, user):
+    """
+    Delete a post.
+    """
+    try:
+        with transaction.atomic():
+            if post.user != user:
+                raise Post.DoesNotExist("You do not have permission to delete this post.")
+            post_id = post.id
+            post.delete()
+
+            # Publish delete event
+            event = {
+                "event_type": "post.deleted",
+                "post_id": post_id,
+                "user_id": user.id,
+                "created_at": datetime.now().isoformat()
+            }
+            producer.produce(
+                "post.events",
+                value=json.dumps(event).encode('utf-8'),
+                callback=delivery_report
+            )
+            producer.flush()  # Ensure delivery (remove in prod)
+    except DatabaseError as e:
+        raise DatabaseError(f"Database error during post deletion: {str(e)}")
+    except Exception as e:
+        raise Exception(f"Unexpected error during post deletion: {str(e)}")
     
 def check_like_eligibility(requesting_user, post):
     """
@@ -241,6 +376,27 @@ def check_like_eligibility(requesting_user, post):
     except Exception as e:
         raise Exception(f"Unexpected error while checking eligibility: {str(e)}")
 
+# def create_like(requesting_user, post):
+#     """
+#     Create a new like for a post by the requesting user.
+#     Args:
+#         requesting_user (User): The user liking the post.
+#         post (Post): The post to like.
+#     Returns:
+#         Like: The created like instance.
+#     Raises:
+#         DatabaseError: If a database error occurs.
+#         Exception: For unexpected errors.
+#     """
+#     try:
+#         with transaction.atomic():
+#             like = Like.objects.create(user=requesting_user, post=post)
+#             return like
+#     except DatabaseError as e:
+#         raise DatabaseError(f"Database error while creating like: {str(e)}")
+#     except Exception as e:
+#         raise Exception(f"Unexpected error while creating like: {str(e)}")
+    
 def create_like(requesting_user, post):
     """
     Create a new like for a post by the requesting user.
@@ -256,6 +412,21 @@ def create_like(requesting_user, post):
     try:
         with transaction.atomic():
             like = Like.objects.create(user=requesting_user, post=post)
+            
+            # Publish like event
+            event = {
+                "event_type": "like.created",
+                "user_id": requesting_user.id,
+                "post_id": post.id,
+                "created_at": like.created_at.isoformat()
+            }
+            producer.produce(
+                "like.events",
+                value=json.dumps(event).encode('utf-8'),
+                callback=delivery_report
+            )
+            producer.flush()  # Ensure delivery (remove in prod)
+
             return like
     except DatabaseError as e:
         raise DatabaseError(f"Database error while creating like: {str(e)}")

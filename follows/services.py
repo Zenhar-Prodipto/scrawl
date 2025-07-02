@@ -1,10 +1,20 @@
 from datetime import datetime
 from follows.models import Follow, FollowRequest
 from users.models import User
-from django.db import DatabaseError,transaction
+from django.db import DatabaseError, transaction
 from django.core.exceptions import ObjectDoesNotExist
 from scrawl.config.kafka_config import producer, delivery_report
 import json
+import redis
+from django.conf import settings
+
+# Redis client
+redis_client = redis.Redis.from_url(settings.REDIS_URL)
+
+# Cache keys
+FOLLOWERS_CACHE_KEY = "followers:{user_id}"
+FOLLOWING_CACHE_KEY = "following:{user_id}"
+FOLLOW_STATUS_CACHE_KEY = "follow_status:{user_id}:{target_id}"
 
 def follow_user(user: User, target_id: int) -> Follow:
     try:
@@ -27,6 +37,11 @@ def follow_user(user: User, target_id: int) -> Follow:
             callback=delivery_report
         )
         producer.flush()  # Ensure delivery for simplicity (remove in prod for async)
+        
+        # Invalidate caches
+        redis_client.delete(FOLLOWERS_CACHE_KEY.format(user_id=target_user.id))
+        redis_client.delete(FOLLOWING_CACHE_KEY.format(user_id=user.id))
+        redis_client.delete(FOLLOW_STATUS_CACHE_KEY.format(user_id=user.id, target_id=target_user.id))
         
         return follow
     except User.DoesNotExist:
@@ -55,40 +70,67 @@ def unfollow_user(user: User, target_id: int) -> None:
                 callback=delivery_report
             )
             producer.flush()  # Ensure delivery (remove in prod)
+        
+        # Invalidate caches
+        redis_client.delete(FOLLOWERS_CACHE_KEY.format(user_id=target_user.id))
+        redis_client.delete(FOLLOWING_CACHE_KEY.format(user_id=user.id))
+        redis_client.delete(FOLLOW_STATUS_CACHE_KEY.format(user_id=user.id, target_id=target_user.id))
+        print("Cache invalidated for follower/following/status:", target_user.id, user.id,flush=True)
     except User.DoesNotExist:
         raise User.DoesNotExist("Target user does not exist.")
     except DatabaseError as e:
         raise DatabaseError(f"Database error: {str(e)}")
     
-def get_followers(user_id:int)->list[User]:
+def get_followers(user_id: int) -> list[User]:
     try:
+        cache_key = FOLLOWERS_CACHE_KEY.format(user_id=user_id)
+        cached_followers = redis_client.get(cache_key)
+        if cached_followers:
+            print("Cache hit for followers:", user_id,flush=True)
+            follower_ids = json.loads(cached_followers)
+            return list(User.objects.filter(id__in=follower_ids, is_deleted=False))
         user = User.objects.get(id=user_id, is_deleted=False)
-        follow_relationships = user.followers.all()  # Queryset of Follow objects
-        # Extract the follower users
-        followers = User.objects.filter(id__in=follow_relationships.values('follower_id'), is_deleted=False)
+        follow_relationships = user.followers.all()
+        followers = list(User.objects.filter(id__in=follow_relationships.values('follower_id'), is_deleted=False))
+        redis_client.setex(cache_key, 300, json.dumps([f.id for f in followers]))  # 5m TTL
+        print("Cache miss for followers:", user_id,flush=True)
         return followers
-        return followers
-    except User.DoesNotExist:  # Specific
+    except User.DoesNotExist:
         raise User.DoesNotExist("Target user does not exist.")
     except DatabaseError as e:
         raise DatabaseError(f"Database error: {str(e)}")
     
-def get_following(user_id:int)->list[User]:
+def get_following(user_id: int) -> list[User]:
     try:
+        cache_key = FOLLOWING_CACHE_KEY.format(user_id=user_id)
+        cached_following = redis_client.get(cache_key)
+        if cached_following:
+            print("Cache hit for following:", user_id,flush=True)
+            following_ids = json.loads(cached_following)
+            return list(User.objects.filter(id__in=following_ids, is_deleted=False))
         user = User.objects.get(id=user_id, is_deleted=False)
-        follow_relationships = user.following.all()  # Queryset of Follow objects
-        # Extract the followed users
-        following = User.objects.filter(id__in=follow_relationships.values('followed_id'), is_deleted=False)
+        follow_relationships = user.following.all()
+        following = list(User.objects.filter(id__in=follow_relationships.values('followed_id'), is_deleted=False))
+        redis_client.setex(cache_key, 300, json.dumps([f.id for f in following]))  # 5m TTL
+        print("Cache miss for following:", user_id,flush=True)
         return following
-    except User.DoesNotExist:  # Specific
+    except User.DoesNotExist:
         raise User.DoesNotExist("Target user does not exist.")
-    except DatabaseError as e:  
+    except DatabaseError as e:
         raise DatabaseError(f"Database error: {str(e)}")
     
 def check_follow_status(current_user: User, target_id: int) -> bool:
     try:
+        cache_key = FOLLOW_STATUS_CACHE_KEY.format(user_id=current_user.id, target_id=target_id)
+        cached_status = redis_client.get(cache_key)
+        if cached_status:
+            print("Cache hit for follow status:", current_user.id, target_id,flush=True)
+            return json.loads(cached_status)
         target_user = User.objects.get(id=target_id, is_deleted=False)
-        return Follow.objects.filter(follower=current_user, followed=target_user).exists()
+        status = Follow.objects.filter(follower=current_user, followed=target_user).exists()
+        redis_client.setex(cache_key, 60, json.dumps(status))  # 1m TTL
+        print("Cache miss for follow status:", current_user.id, target_id,flush=True)
+        return status
     except User.DoesNotExist:
         raise User.DoesNotExist("Target user does not exist.")
     except DatabaseError as e:
@@ -150,7 +192,7 @@ def create_follow_request(requester: User, target_id: int) -> FollowRequest:
     except DatabaseError as e:
         raise DatabaseError(f"Database error: {str(e)}")
     
-def follow_requests_incoming(target:User) -> list[FollowRequest]:
+def follow_requests_incoming(target: User) -> list[FollowRequest]:
     """
     Fetch all pending follow requests where the user is the target.
     Args:
@@ -163,13 +205,12 @@ def follow_requests_incoming(target:User) -> list[FollowRequest]:
             target=target,
             status='pending'
         ).order_by('created_at')
-
         return follow_requests
     except DatabaseError as e:
         raise DatabaseError(f"Database error: {str(e)}")
     
     
-def follow_requests_outgoing(requester:User) -> list[FollowRequest]:
+def follow_requests_outgoing(requester: User) -> list[FollowRequest]:
     """
     Fetch all pending follow requests sent by the user.
     Args:
@@ -182,7 +223,6 @@ def follow_requests_outgoing(requester:User) -> list[FollowRequest]:
             requester=requester,
             status='pending'
         ).order_by('created_at')
-        
         return follow_requests
     except DatabaseError as e:
         raise DatabaseError(f"Database error: {str(e)}")

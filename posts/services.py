@@ -3,7 +3,7 @@ from django.db import DatabaseError, transaction
 from django.db.models import Prefetch
 from follows.services import check_follow_status, check_super_follower
 from users.models import User
-from users.services import get_user_by_id
+from users.services import UserService
 from .models import Post, PostImage, Tag, Like, Comment, Save
 from scrawl.config.kafka_config import producer, delivery_report
 import json
@@ -295,7 +295,7 @@ def check_like_eligibility(requesting_user, post):
             return False  # Already liked, not eligible to like again
         
         # Check if the target user exists and is not deleted
-        target_user_exists= get_user_by_id(target_user.id)
+        target_user_exists= UserService.get_user_by_id(target_user.id)
         if not target_user_exists:
             raise User.DoesNotExist("Target user does not exist or has been deleted.")
         
@@ -444,7 +444,7 @@ def check_comment_eligibility(requesting_user, post):
         target_user = post.user
         
         # Check if the target user exists and is not deleted
-        target_user_exists = get_user_by_id(target_user.id)
+        target_user_exists = UserService.get_user_by_id(target_user.id)
         if not target_user_exists:
             raise User.DoesNotExist("Target user does not exist or has been deleted.")
 
@@ -653,7 +653,7 @@ def check_save_eligibility(requesting_user, post):
         target_user = post.user
         
         # Check if the target user exists and is not deleted
-        target_user_exists = get_user_by_id(target_user.id)
+        target_user_exists = UserService.get_user_by_id(target_user.id)
         if not target_user_exists:
             raise User.DoesNotExist("Target user does not exist or has been deleted.")
 
@@ -774,7 +774,7 @@ def post_view_eligibility(requesting_user: User, post: Post) -> bool:
         target_user = post.user
         
         # Check if the target user exists and is not deleted
-        target_user_exists = get_user_by_id(target_user.id)
+        target_user_exists = UserService.get_user_by_id(target_user.id)
         if not target_user_exists:
             raise User.DoesNotExist("Target user does not exist or has been deleted.")
 

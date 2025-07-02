@@ -6,7 +6,7 @@ from django.conf import settings
 from django.db import DatabaseError
 from django.db.models import Prefetch, Q, Count
 from django.core.cache import cache
-from follows.services import get_following
+from follows.services import FollowService
 from posts.services import post_view_eligibility
 from posts.models import Post, Like, Comment, Save
 from users.models import User
@@ -35,7 +35,7 @@ class FeedService:
         cached = redis_client.get(cache_key)
         if cached:
             return set(json.loads(cached))
-        following_ids = set(get_following(user_id).values_list('id', flat=True))
+        following_ids = set(FollowService.get_following(user_id).values_list('id', flat=True))
         redis_client.setex(cache_key, CACHE_TIMEOUT, json.dumps(list(following_ids)))
         return following_ids
 

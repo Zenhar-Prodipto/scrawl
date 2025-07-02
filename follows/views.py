@@ -2,8 +2,8 @@ from rest_framework import generics, status
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from .serializers import FollowRequestCancelSerializer, FollowRequestSerializerIncoming, FollowRequestSerializerOutgoing, FollowRequestUpdateSerializer, FollowSerializer, UserFollowSerializer, SelfUserFollowSerializer
-from .services import cancel_follow_request, create_follow_request, does_follow_request_exist, follow_requests_incoming, follow_requests_outgoing, follow_user, get_follower_count, get_following_count, unfollow_user,get_followers,get_following,check_follow_status, update_follow_request
-from users.services import get_user_by_id  
+from .services import FollowService
+from users.services import UserService  
 from users.models import User  
 from django.db import DatabaseError
 from .paginators import FollowPaginator
@@ -19,16 +19,16 @@ class FollowView(generics.GenericAPIView):
         
         try:
             serializer.is_valid(raise_exception=True)
-            target_user = get_user_by_id(user_id)
+            target_user = UserService.get_user_by_id(user_id)
             if target_user.profile_type == 'private':
-                follow_status = check_follow_status(current_user, user_id)
+                follow_status = FollowService.check_follow_status(current_user, user_id)
                 if follow_status:
                     return Response(
                         {"status": "error", "message": "you are already following this user"},
                         status=status.HTTP_400_BAD_REQUEST
                     )
                 # check if current user has already sent a follow request
-                follow_requests_exists = does_follow_request_exist(current_user, user_id)
+                follow_requests_exists = FollowService.does_follow_request_exist(current_user, user_id)
                 if follow_requests_exists:
                     return Response(
                         {"status": "error", "message": "You have already sent a follow request to this user"},
@@ -36,7 +36,7 @@ class FollowView(generics.GenericAPIView):
                     )
                 
                 #create a follow request
-                create_follow_request(current_user, user_id)
+                FollowService.create_follow_request(current_user, user_id)
                 
                 return Response(
                     {
@@ -47,7 +47,7 @@ class FollowView(generics.GenericAPIView):
                     status=status.HTTP_201_CREATED
                 )
             
-            follow = follow_user(current_user, user_id)
+            follow = FollowService.follow_user(current_user, user_id)
             target_user = User.objects.get(id=user_id, is_deleted=False)
             target_data = UserFollowSerializer(target_user).data
             return Response(
@@ -94,15 +94,15 @@ class FollowView(generics.GenericAPIView):
     def delete(self, request, user_id, *args, **kwargs):
         current_user = request.user
         try:
-            follow_status = check_follow_status(current_user, user_id)
+            follow_status = FollowService.check_follow_status(current_user, user_id)
             if not follow_status:
                 return Response(
                     {"status": "error", "message": "You are not following this user"},
                     status=status.HTTP_400_BAD_REQUEST
                 )
             # Get target user before unfollowing for response
-            target_user = get_user_by_id(user_id)
-            unfollow_user(current_user, user_id)
+            target_user = UserService.get_user_by_id(user_id)
+            FollowService.unfollow_user(current_user, user_id)
             target_data = UserFollowSerializer(target_user).data 
             return Response(
                 {
@@ -136,10 +136,10 @@ class FollowersView(generics.GenericAPIView):
     def get(self, request, user_id, *args, **kwargs):
         try:
             # Check if the target user exists and get their profile type
-            target_user = get_user_by_id(user_id)
+            target_user = UserService.get_user_by_id(user_id)
             # Privacy check: If private and not following, deny access
             if target_user.profile_type == 'private':
-                is_following = check_follow_status(request.user, user_id)
+                is_following = FollowService.check_follow_status(request.user, user_id)
                 
                 if not is_following and request.user != target_user:
                     return Response(
@@ -147,8 +147,8 @@ class FollowersView(generics.GenericAPIView):
                         status=status.HTTP_403_FORBIDDEN
                     )
             
-            followers = get_followers(user_id)
-            followers_count = get_follower_count(user_id)
+            followers = FollowService.get_followers(user_id)
+            followers_count = FollowService.get_follower_count(user_id)
             paginator = self.pagination_class() 
             page = paginator.paginate_queryset(followers, request, self)
             serializer = self.get_serializer(page, many=True)
@@ -186,18 +186,18 @@ class FollowingView(generics.GenericAPIView):
     def get(self, request, user_id, *args, **kwargs):
         try:
             # Check if the target user exists and get their profile type
-            target_user = get_user_by_id(user_id)
+            target_user = UserService.get_user_by_id(user_id)
             
             # Privacy check: If private and not following, deny access
             if target_user.profile_type == 'private':
-                is_following = check_follow_status(request.user, user_id)
+                is_following = FollowService.check_follow_status(request.user, user_id)
                 if not is_following and request.user != target_user:
                     return Response(
                         {"status": "error", "message": "Cannot view followers of private profile"},
                         status=status.HTTP_403_FORBIDDEN
                     )
-            following = get_following(user_id)
-            following_count = get_following_count(user_id)
+            following = FollowService.get_following(user_id)
+            following_count = FollowService.get_following_count(user_id)
             paginator = self.pagination_class() 
             page = paginator.paginate_queryset(following, request, self)
             serializer = self.get_serializer(page, many=True)
@@ -227,8 +227,6 @@ class FollowingView(generics.GenericAPIView):
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
             
-
-            
 class SelfFollowersView(generics.ListAPIView):
     serializer_class = SelfUserFollowSerializer
     permission_classes = [IsAuthenticated]
@@ -236,12 +234,12 @@ class SelfFollowersView(generics.ListAPIView):
     
     def get_queryset(self):
         current_user = self.request.user
-        return get_followers(current_user.id)
+        return FollowService.get_followers(current_user.id)
     
     def list(self, request, *args, **kwargs):
         try:
             queryset = self.get_queryset()
-            followers_count = get_follower_count(self.request.user.id)
+            followers_count = FollowService.get_follower_count(self.request.user.id)
             page = self.paginate_queryset(queryset)
             serializer = self.get_serializer(page, many=True)
             return self.get_paginated_response({
@@ -261,7 +259,6 @@ class SelfFollowersView(generics.ListAPIView):
                 {"status": "error", "message": "Database error occurred"},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
-            
         except Exception as e:
             return Response(
                 {
@@ -270,6 +267,7 @@ class SelfFollowersView(generics.ListAPIView):
                 },
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+            
 class SelfFollowingView(generics.ListAPIView):
     serializer_class = SelfUserFollowSerializer
     permission_classes = [IsAuthenticated]
@@ -277,13 +275,12 @@ class SelfFollowingView(generics.ListAPIView):
     
     def get_queryset(self):
         current_user = self.request.user
-        return get_following(current_user.id)
-        
+        return FollowService.get_following(current_user.id)
     
-    def list(self,request,*args,**kwargs):
+    def list(self, request, *args, **kwargs):
         try:
             queryset = self.get_queryset()
-            following_count = get_following_count(self.request.user.id)
+            following_count = FollowService.get_following_count(self.request.user.id)
             page = self.paginate_queryset(queryset)
             serializer = self.get_serializer(page, many=True)
             return self.get_paginated_response({
@@ -317,7 +314,7 @@ class FollowStatusView(generics.GenericAPIView):
     def get(self, request, user_id, *args, **kwargs):
         current_user = request.user
         try:
-            is_following = check_follow_status(current_user, user_id)
+            is_following = FollowService.check_follow_status(current_user, user_id)
             return Response(
                 {
                     "status": "success",
@@ -336,7 +333,6 @@ class FollowStatusView(generics.GenericAPIView):
                 {"status": "error", "message": "Database error occurred"},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
-            
         except Exception as e:
             return Response(
                 {
@@ -353,8 +349,7 @@ class PendingFollowRequestsIncomingView(generics.ListAPIView):
     
     def get_queryset(self):
         current_user = self.request.user
-        return follow_requests_incoming(current_user)
-        
+        return FollowService.follow_requests_incoming(current_user)
     
     def list(self, request, *args, **kwargs):
         try:
@@ -392,7 +387,7 @@ class PendingFollowRequestsOutgoingView(generics.ListAPIView):
     
     def get_queryset(self):
         current_user = self.request.user
-        return follow_requests_outgoing(current_user)
+        return FollowService.follow_requests_outgoing(current_user)
     
     def list(self, request, *args, **kwargs):
         try:
@@ -436,7 +431,7 @@ class FollowRequestUpdateView(generics.GenericAPIView):
             current_user = request.user
 
             # Update the follow request
-            update_follow_request(current_user, req_id, new_status)
+            FollowService.update_follow_request(current_user, req_id, new_status)
 
             # Return appropriate success message
             if new_status == 'accepted':
@@ -482,7 +477,7 @@ class FollowRequestCancelView(generics.GenericAPIView):
             serializer.is_valid(raise_exception=True)
             current_user = request.user
             # Update the follow request
-            cancel_follow_request(current_user, req_id)
+            FollowService.cancel_follow_request(current_user, req_id)
 
             return Response(
                 {

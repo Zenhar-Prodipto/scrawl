@@ -2,6 +2,7 @@ from rest_framework import serializers
 from rest_framework_simplejwt.tokens import RefreshToken
 from .models import User, Interest
 from .services import create_user, update_user
+from .services import UserService
 
 class InterestSerializer(serializers.ModelSerializer):
     class Meta:
@@ -78,7 +79,7 @@ class RegisterSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         interests = validated_data.pop('interests')
-        user = create_user(
+        user = UserService.create_user(
             username=validated_data['username'],
             email=validated_data['email'],
             password=validated_data['password'],
@@ -211,5 +212,5 @@ class UpdateUserSerializer(serializers.ModelSerializer):
 
     def update(self, instance, validated_data): 
         print("Validated Data",validated_data,flush=True)
-        user = update_user(instance, validated_data)
+        user = UserService.update_user(instance, validated_data)
         return user

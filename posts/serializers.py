@@ -1,7 +1,7 @@
 from rest_framework import serializers
 from users.models import User
 from .models import Post, PostImage, Tag, Like, Comment
-from .services import create_post,update_post
+from .services import PostService
 
 class PostImageCreateSerializer(serializers.ModelSerializer):
     class Meta:
@@ -47,7 +47,7 @@ class PostCreateSerializer(serializers.ModelSerializer):
         user = kwargs.pop('user')
         validated_data = dict(self.validated_data)
         tags_data = validated_data.pop('tags')
-        return create_post(user, validated_data, tags_data)
+        return PostService.create_post(user, validated_data, tags_data)
     
 
 class UserPostSerializer(serializers.ModelSerializer):
@@ -208,7 +208,7 @@ class PostUpdateSerializer(serializers.ModelSerializer):
     def save(self, **kwargs):
         user = kwargs.pop('user')
         validated_data = dict(self.validated_data)
-        return update_post(self.instance, user, validated_data)
+        return PostService.update_post(self.instance, user, validated_data)
     
 class LikeCreateSerializer(serializers.Serializer):
     like = serializers.BooleanField(default=True, required=False)

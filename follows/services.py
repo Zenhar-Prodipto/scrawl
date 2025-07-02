@@ -66,8 +66,7 @@ def get_followers(user_id:int)->list[User]:
         follow_relationships = user.followers.all()  # Queryset of Follow objects
         # Extract the follower users
         followers = User.objects.filter(id__in=follow_relationships.values('follower_id'), is_deleted=False)
-        return followers
-        return followers
+        return followers      
     except User.DoesNotExist:  # Specific
         raise User.DoesNotExist("Target user does not exist.")
     except DatabaseError as e:

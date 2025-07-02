@@ -8,42 +8,7 @@ from .models import Post, PostImage, Tag, Like, Comment, Save
 from scrawl.config.kafka_config import producer, delivery_report
 import json
 
-# def create_post(user, validated_data, tags_data):
-#     """
-#     Create a new post with associated images and tags.
-#     Args:
-#         user (User): The authenticated user creating the post.
-#         validated_data (dict): Validated data containing text, privacy, and post_images.
-#         tags_data (list): List of tag names.
-#     Returns:
-#         Post: The created post instance.
-#     Raises:
-#         DatabaseError: If a database error occurs.
-#         Exception: For unexpected errors.
-#     """
-#     try:
-#         post_images_data = validated_data.pop('post_images', [])
 
-#         with transaction.atomic():
-#             # Create the post
-#             post = Post.objects.create(user=user, **validated_data)
-
-#             # Create or fetch tags and associate them with the post
-#             for tag_name in tags_data:
-#                 tag, _ = Tag.objects.get_or_create(name=tag_name.strip())
-#                 post.tags.add(tag)
-
-#             # Create post images
-#             for image_data in post_images_data:
-#                 PostImage.objects.create(post=post, **image_data)
-
-#             return post
-
-#     except DatabaseError as e:
-#         raise DatabaseError(f"Database error during post creation: {str(e)}")
-#     except Exception as e:
-#         raise Exception(f"Unexpected error during post creation: {str(e)}")
-    
 def create_post(user, validated_data, tags_data):
     """
     Create a new post with associated images and tags. 
@@ -165,66 +130,6 @@ def get_user_posts(user):
     except Exception as e:
         raise Exception(f"Unexpected error while fetching posts: {str(e)}")
     
-    
-# def update_post(post, user, validated_data):
-#     """
-#     Update a post's text, privacy, tags, and images.
-#     Args:
-#         post (Post): The post instance to update.
-#         user (User): The authenticated user.
-#         validated_data (dict): Validated data containing fields to update.
-#     Returns:
-#         Post: The updated post instance.
-#     Raises:
-#         DatabaseError: If a database error occurs.
-#         Exception: For unexpected errors.
-#     """
-#     try:
-#         with transaction.atomic():
-#             # Update text and privacy if provided
-#             if 'text' in validated_data:
-#                 post.text = validated_data['text']
-#             if 'privacy' in validated_data:
-#                 post.privacy = validated_data['privacy']
-
-#             # Handle tags
-#             tags_to_add = validated_data.get('tags_to_add', [])
-#             tags_to_remove = validated_data.get('tags_to_remove', [])
-
-#             # Add new tags
-#             for tag_name in tags_to_add:
-#                 tag, _ = Tag.objects.get_or_create(name=tag_name.strip())
-#                 post.tags.add(tag)
-
-#             # Remove tags
-#             for tag_name in tags_to_remove:
-#                 try:
-#                     tag = Tag.objects.get(name=tag_name.strip())
-#                     post.tags.remove(tag)
-#                 except Tag.DoesNotExist:
-#                     pass  # Tag doesn't exist, skip
-
-#             # Handle images
-#             images_to_add = validated_data.get('post_images_to_add', [])
-#             images_to_remove = validated_data.get('post_images_to_remove', [])
-
-#             # Remove images
-#             if images_to_remove:
-#                 PostImage.objects.filter(id__in=images_to_remove, post=post).delete()
-
-#             # Add new images
-#             for image_data in images_to_add:
-#                 PostImage.objects.create(post=post, **image_data)
-
-#             # Save the post
-#             post.save()
-#             return post
-
-#     except DatabaseError as e:
-#         raise DatabaseError(f"Database error during post update: {str(e)}")
-#     except Exception as e:
-#         raise Exception(f"Unexpected error during post update: {str(e)}")
-
 
 def update_post(post, user, validated_data):
     """
@@ -375,27 +280,6 @@ def check_like_eligibility(requesting_user, post):
         raise DatabaseError(f"Database error while checking eligibility: {str(e)}")
     except Exception as e:
         raise Exception(f"Unexpected error while checking eligibility: {str(e)}")
-
-# def create_like(requesting_user, post):
-#     """
-#     Create a new like for a post by the requesting user.
-#     Args:
-#         requesting_user (User): The user liking the post.
-#         post (Post): The post to like.
-#     Returns:
-#         Like: The created like instance.
-#     Raises:
-#         DatabaseError: If a database error occurs.
-#         Exception: For unexpected errors.
-#     """
-#     try:
-#         with transaction.atomic():
-#             like = Like.objects.create(user=requesting_user, post=post)
-#             return like
-#     except DatabaseError as e:
-#         raise DatabaseError(f"Database error while creating like: {str(e)}")
-#     except Exception as e:
-#         raise Exception(f"Unexpected error while creating like: {str(e)}")
     
 def create_like(requesting_user, post):
     """

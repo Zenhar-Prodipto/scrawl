@@ -1,37 +1,3 @@
-# import os
-# from confluent_kafka import Consumer, KafkaError
-# import json
-# import logging
-
-# logging.basicConfig(level=logging.INFO)
-# logger = logging.getLogger(__name__)
-
-# kafka_config = {
-#     'bootstrap.servers': os.environ.get('KAFKA_BROKER', 'drf_scrawl_kafka:9092'),
-#     'group.id': 'scrawl-group',
-#     'auto.offset.reset': 'earliest'
-# }
-
-# consumer = Consumer(kafka_config)
-# consumer.subscribe(['like.events', 'follow.events', 'post.events'])
-
-# try:
-#     while True:
-#         msg = consumer.poll(1.0)
-#         if msg is None:
-#             continue
-#         if msg.error():
-#             if msg.error().code() == KafkaError._PARTITION_EOF:
-#                 continue
-#             logger.error(f"Consumer error: {msg.error()}")
-#         else:
-#             event = json.loads(msg.value().decode('utf-8'))
-#             logger.info(f"Received event: {event}")
-# except KeyboardInterrupt:
-#     pass
-# finally:
-#     consumer.close()
-
 import os
 import sys
 import time

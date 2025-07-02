@@ -3,7 +3,7 @@ from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from .serializers import FollowRequestCancelSerializer, FollowRequestSerializerIncoming, FollowRequestSerializerOutgoing, FollowRequestUpdateSerializer, FollowSerializer, UserFollowSerializer, SelfUserFollowSerializer
 from .services import cancel_follow_request, create_follow_request, does_follow_request_exist, follow_requests_incoming, follow_requests_outgoing, follow_user, get_follower_count, get_following_count, unfollow_user,get_followers,get_following,check_follow_status, update_follow_request
-from users.services import get_user_by_id  
+from users.services import UserService  
 from users.models import User  
 from django.db import DatabaseError
 from .paginators import FollowPaginator
@@ -19,7 +19,7 @@ class FollowView(generics.GenericAPIView):
         
         try:
             serializer.is_valid(raise_exception=True)
-            target_user = get_user_by_id(user_id)
+            target_user = UserService.get_user_by_id(user_id)
             if target_user.profile_type == 'private':
                 follow_status = check_follow_status(current_user, user_id)
                 if follow_status:
@@ -101,7 +101,7 @@ class FollowView(generics.GenericAPIView):
                     status=status.HTTP_400_BAD_REQUEST
                 )
             # Get target user before unfollowing for response
-            target_user = get_user_by_id(user_id)
+            target_user = UserService.get_user_by_id(user_id)
             unfollow_user(current_user, user_id)
             target_data = UserFollowSerializer(target_user).data 
             return Response(
@@ -136,7 +136,7 @@ class FollowersView(generics.GenericAPIView):
     def get(self, request, user_id, *args, **kwargs):
         try:
             # Check if the target user exists and get their profile type
-            target_user = get_user_by_id(user_id)
+            target_user = UserService.get_user_by_id(user_id)
             # Privacy check: If private and not following, deny access
             if target_user.profile_type == 'private':
                 is_following = check_follow_status(request.user, user_id)
@@ -186,7 +186,7 @@ class FollowingView(generics.GenericAPIView):
     def get(self, request, user_id, *args, **kwargs):
         try:
             # Check if the target user exists and get their profile type
-            target_user = get_user_by_id(user_id)
+            target_user = UserService.get_user_by_id(user_id)
             
             # Privacy check: If private and not following, deny access
             if target_user.profile_type == 'private':

@@ -9,9 +9,16 @@ services:
     ports:
       - "8000:8000"
     depends_on:
-      - db
+      db:
+        condition: service_started
+      redis:
+        condition: service_started
+      kafka:
+        condition: service_healthy
     env_file:
       - .env
+    entrypoint: ["/app/entrypoint.sh"]
+    command: ["python", "manage.py", "runserver", "0.0.0.0:8000"]
 
   db:
     image: postgres:14
@@ -26,5 +33,119 @@ services:
     ports:
       - "5434:5432"
 
+  redis:
+    image: redis:7.2
+    container_name: drf_scrawl_redis
+    restart: always
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    environment:
+      - REDIS_URL=${REDIS_URL}
+
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.5.0
+    container_name: drf_scrawl_zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+      ZOOKEEPER_AUTOPURGE_PURGEINTERVAL: 1
+    ports:
+      - "2181:2181"
+    volumes:
+      - zookeeper_data:/var/lib/zookeeper/data
+      - zookeeper_logs:/var/lib/zookeeper/log
+
+  kafka:
+    image: confluentinc/cp-kafka:7.5.0
+    container_name: drf_scrawl_kafka
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: drf_scrawl_zookeeper:2181
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://drf_scrawl_kafka:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_NUM_PARTITIONS: 3
+      KAFKA_DEFAULT_REPLICATION_FACTOR: 1
+      KAFKA_MIN_INSYNC_REPLICAS: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_LOG_RETENTION_HOURS: 168
+      KAFKA_LOG_SEGMENT_BYTES: 1073741824
+      KAFKA_LOG_RETENTION_CHECK_INTERVAL_MS: 300000
+    volumes:
+      - kafka_data:/var/lib/kafka/data
+    healthcheck:
+      test:
+        ["CMD-SHELL", "kafka-topics --bootstrap-server localhost:9092 --list"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
+
+  kafka-init:
+    image: confluentinc/cp-kafka:7.5.0
+    container_name: drf_scrawl_kafka_init
+    depends_on:
+      kafka:
+        condition: service_healthy
+    command: |
+      bash -c "
+        echo 'Creating Kafka topics...'
+        kafka-topics --create --bootstrap-server drf_scrawl_kafka:9092 --replication-factor 1 --partitions 3 --topic like.events --if-not-exists
+        kafka-topics --create --bootstrap-server drf_scrawl_kafka:9092 --replication-factor 1 --partitions 3 --topic follow.events --if-not-exists  
+        kafka-topics --create --bootstrap-server drf_scrawl_kafka:9092 --replication-factor 1 --partitions 3 --topic post.events --if-not-exists
+        kafka-topics --create --bootstrap-server drf_scrawl_kafka:9092 --replication-factor 1 --partitions 3 --topic feed_events_dlq --if-not-exists
+        echo 'Topics created successfully'
+        kafka-topics --bootstrap-server drf_scrawl_kafka:9092 --list
+      "
+
+  consumer:
+    build: .
+    container_name: drf_scrawl_consumer
+    volumes:
+      - .:/app
+    depends_on:
+      db:
+        condition: service_started
+      redis:
+        condition: service_started
+      kafka-init:
+        condition: service_completed_successfully
+    env_file:
+      - .env
+    entrypoint: ["/app/entrypoint.sh"]
+    command: ["python", "-u", "/app/scrawl/consumers.py"]
+    restart: unless-stopped
+
+  feed-consumer:
+    build: .
+    container_name: drf_scrawl_feed_consumer
+    volumes:
+      - .:/app
+    depends_on:
+      db:
+        condition: service_started
+      redis:
+        condition: service_started
+      kafka:
+        condition: service_healthy
+    env_file:
+      - .env
+    entrypoint: ["/app/entrypoint.sh"]
+    command: ["python", "-u", "/app/scrawl/feed_consumer.py"]
+    restart: unless-stopped
+
 volumes:
   postgres_data:
+  redis_data:
+  kafka_data:
+  zookeeper_data:
+  zookeeper_logs:

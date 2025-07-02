@@ -1,7 +1,10 @@
+from datetime import datetime
 from follows.models import Follow, FollowRequest
 from users.models import User
-from django.db import DatabaseError
+from django.db import DatabaseError,transaction
 from django.core.exceptions import ObjectDoesNotExist
+from scrawl.config.kafka_config import producer, delivery_report
+import json
 
 def follow_user(user: User, target_id: int) -> Follow:
     try:
@@ -9,17 +12,50 @@ def follow_user(user: User, target_id: int) -> Follow:
         follow, created = Follow.objects.get_or_create(follower=user, followed=target_user)
         if not created:
             raise ValueError("You already follow this user.")
+        
+        # Publish follow event
+        event = {
+            "event_type": "follow.created",
+            "follower_id": user.id,
+            "followed_id": target_user.id,
+            "created_at": follow.created_at.isoformat(),
+            "is_super_follower": follow.is_super_follower
+        }
+        producer.produce(
+            "follow.events",
+            value=json.dumps(event).encode('utf-8'),
+            callback=delivery_report
+        )
+        producer.flush()  # Ensure delivery for simplicity (remove in prod for async)
+        
         return follow
-    except User.DoesNotExist:  
-        raise User.DoesNotExist("Target user does not exist.")  
+    except User.DoesNotExist:
+        raise User.DoesNotExist("Target user does not exist.")
     except DatabaseError as e:
         raise DatabaseError(f"Database error: {str(e)}")
     
 def unfollow_user(user: User, target_id: int) -> None:
     try:
-        target = User.objects.get(id=target_id, is_deleted=False)
-        Follow.objects.filter(follower=user, followed=target).delete()
-    except User.DoesNotExist:  # Specific
+        target_user = User.objects.get(id=target_id, is_deleted=False)
+        with transaction.atomic():
+            deleted_count, _ = Follow.objects.filter(follower=user, followed=target_user).delete()
+            if deleted_count == 0:
+                raise ValueError("You are not following this user.")
+            
+            # Publish unfollow event
+            event = {
+                "event_type": "follow.deleted",
+                "follower_id": user.id,
+                "followed_id": target_user.id,
+                "created_at": datetime.now().isoformat()
+            }
+            producer.produce(
+                "follow.events",
+                value=json.dumps(event).encode('utf-8'),
+                callback=delivery_report
+            )
+            producer.flush()  # Ensure delivery (remove in prod)
+    except User.DoesNotExist:
         raise User.DoesNotExist("Target user does not exist.")
     except DatabaseError as e:
         raise DatabaseError(f"Database error: {str(e)}")

@@ -7,7 +7,7 @@ from django.db import DatabaseError
 from django.db.models import Prefetch, Q, Count
 from django.core.cache import cache
 from follows.services import FollowService
-from posts.services import post_view_eligibility
+from posts.services import PostService
 from posts.models import Post, Like, Comment, Save
 from users.models import User
 from datetime import datetime, timedelta
@@ -35,7 +35,8 @@ class FeedService:
         cached = redis_client.get(cache_key)
         if cached:
             return set(json.loads(cached))
-        following_ids = set(FollowService.get_following(user_id).values_list('id', flat=True))
+        following = FollowService.get_following(user_id)  # Returns list of User objects
+        following_ids = set(user.id for user in following)  # Extract IDs manually
         redis_client.setex(cache_key, CACHE_TIMEOUT, json.dumps(list(following_ids)))
         return following_ids
 
@@ -140,7 +141,7 @@ class FeedService:
     @staticmethod
     def _is_post_visible(user: User, post: Post) -> bool:
         try:
-            return post_view_eligibility(user, post)
+            return PostService.post_view_eligibility(user, post)
         except (User.DoesNotExist, DatabaseError, Exception):
             logger.warning(f"Visibility check failed for user {user.id} and post {post.id}")
             return False

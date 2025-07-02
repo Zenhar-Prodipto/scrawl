@@ -6,7 +6,7 @@ from rest_framework.views import APIView
 from rest_framework.permissions import IsAuthenticated
 from django.db import DatabaseError
 from django.core.exceptions import ObjectDoesNotExist
-from .services import check_if_like_exists, check_save_eligibility, delete_like, get_self_post_by_id, get_post_by_id, get_user_posts,check_like_eligibility, create_like, create_comment, check_comment_eligibility, get_comment_by_id, get_user_saved_posts, update_comment, delete_comment, get_save_by_user_and_post, create_save, delete_save,get_user_posts_by_id,post_view_eligibility
+from .services import PostService
 from .models import Post, Like, User, Comment
 from .serializers import LikeCreateSerializer
 from .serializers import PostCreateSerializer, PostDetailSerializer, PostListSerializer, PostUpdateSerializer, LikeCreateSerializer, CommentCreateSerializer, CommentUpdateSerializer
@@ -69,7 +69,7 @@ class PostDetailView(APIView):
 
     def get(self, request, post_id, *args, **kwargs):
         try:
-            post = get_self_post_by_id(post_id, request.user)
+            post = PostService.get_self_post_by_id(post_id, request.user)
             serializer = PostDetailSerializer(post, context={'request': request})
             return Response(
                 {
@@ -110,7 +110,7 @@ class PostDetailView(APIView):
     def patch(self, request, post_id, *args, **kwargs):
         try:
             # Fetch the post
-            post = get_self_post_by_id(post_id, request.user)
+            post = PostService.get_self_post_by_id(post_id, request.user)
             
             # Serialize and validate the update data
             serializer = PostUpdateSerializer(post, data=request.data, context={'request': request}, partial=True)
@@ -165,7 +165,7 @@ class PostDetailView(APIView):
     def delete(self, request, post_id, *args, **kwargs):
         try:
             # Fetch the post
-            post = get_self_post_by_id(post_id, request.user)
+            post = PostService.get_self_post_by_id(post_id, request.user)
             
             # Delete the post (cascades to related objects)
             post.delete()
@@ -213,7 +213,7 @@ class PostListView(APIView):
     def get(self, request, *args, **kwargs):
         try:
             # Fetch posts
-            posts = get_user_posts(request.user)
+            posts = PostService.get_user_posts(request.user)
             
             # Paginate the queryset
             paginator = self.pagination_class()
@@ -266,10 +266,10 @@ class LikePostView(APIView):
                 )
 
             # Fetch the post
-            post = get_post_by_id(post_id)
+            post = PostService.get_post_by_id(post_id)
             
             # Check eligibility to like the post
-            if not check_like_eligibility(request.user, post):
+            if not PostService.check_like_eligibility(request.user, post):
                 return Response(
                     {
                         "status": "error",
@@ -280,7 +280,7 @@ class LikePostView(APIView):
                 )
 
             # Create the like
-            like = create_like(request.user, post)
+            like = PostService.create_like(request.user, post)
 
             return Response(
                 {
@@ -331,10 +331,10 @@ class LikePostView(APIView):
     def delete(self, request, post_id, *args, **kwargs):
         try:
             # Fetch the post
-            post = get_post_by_id(post_id)
+            post = PostService.get_post_by_id(post_id)
             
             # Check if the user has liked the post
-            like_exists = check_if_like_exists(request.user, post)
+            like_exists = PostService.check_if_like_exists(request.user, post)
             if not like_exists:
                 return Response(
                     {
@@ -346,7 +346,7 @@ class LikePostView(APIView):
                 )
 
             # Delete the like
-            delete_like(request.user, post)
+            PostService.delete_like(request.user, post)
 
             return Response(
                 {
@@ -403,10 +403,10 @@ class CommentPostView(APIView):
                 )
 
             # Fetch the post
-            post = get_post_by_id(post_id)
+            post = PostService.get_post_by_id(post_id)
             
             # Check eligibility to comment on the post
-            if not check_comment_eligibility(request.user, post):
+            if not PostService.check_comment_eligibility(request.user, post):
                 return Response(
                     {
                         "status": "error",
@@ -417,7 +417,7 @@ class CommentPostView(APIView):
                 )
 
             # Create the comment
-            comment = create_comment(request.user, post, serializer.validated_data['text'])
+            comment = PostService.create_comment(request.user, post, serializer.validated_data['text'])
 
             return Response(
                 {
@@ -469,10 +469,10 @@ class CommentPostView(APIView):
     def patch(self, request, post_id, comment_id, *args, **kwargs):
         try:
             # Fetch the post
-            post = get_post_by_id(post_id)
+            post = PostService.get_post_by_id(post_id)
             
             # Fetch the comment
-            comment = get_comment_by_id(comment_id, post)
+            comment = PostService.get_comment_by_id(comment_id, post)
             
             print("Comment:{comment}", flush=True)
             
@@ -488,7 +488,7 @@ class CommentPostView(APIView):
                 )
             
             # Check eligibility to interact with the post
-            if not check_comment_eligibility(request.user, post):
+            if not PostService.check_comment_eligibility(request.user, post):
                 return Response(
                     {
                         "status": "error",
@@ -511,7 +511,7 @@ class CommentPostView(APIView):
                 )
 
             # Update the comment
-            updated_comment = update_comment(comment, serializer.validated_data.get('text', comment.text))
+            updated_comment = PostService.update_comment(comment, serializer.validated_data.get('text', comment.text))
 
             return Response(
                 {
@@ -562,14 +562,14 @@ class CommentPostView(APIView):
     def delete(self, request, post_id, comment_id, *args, **kwargs):
         try:
             # Fetch the post
-            post = get_post_by_id(post_id)
+            post = PostService.get_post_by_id(post_id)
             
             # Fetch the comment
-            comment = get_comment_by_id(comment_id, post)
+            comment = PostService.get_comment_by_id(comment_id, post)
             
             # Check if the requesting user is the post owner (can delete any comment)
             if request.user == post.user:
-                delete_comment(comment)
+                PostService.delete_comment(comment)
                 return Response(
                     {
                         "status": "success",
@@ -585,7 +585,7 @@ class CommentPostView(APIView):
             # If not the post owner, check if the user is the comment creator
             if request.user == comment.user:
                 # Check eligibility for non-owners
-                if not check_comment_eligibility(request.user, post):
+                if not PostService.check_comment_eligibility(request.user, post):
                     return Response(
                         {
                             "status": "error",
@@ -594,7 +594,7 @@ class CommentPostView(APIView):
                         },
                         status=status.HTTP_403_FORBIDDEN
                     )
-                delete_comment(comment)
+                PostService.delete_comment(comment)
                 return Response(
                     {
                         "status": "success",
@@ -657,10 +657,10 @@ class SavePostView(APIView):
     def post(self, request, post_id, *args, **kwargs):
         try:
             # Fetch the post
-            post = get_post_by_id(post_id)
+            post = PostService.get_post_by_id(post_id)
             
             # Check eligibility (same as like/comment, allows self-saves)
-            if not check_save_eligibility(request.user, post):
+            if not PostService.check_save_eligibility(request.user, post):
                 return Response(
                     {
                         "status": "error",
@@ -671,7 +671,7 @@ class SavePostView(APIView):
                 )
 
             # Check if already saved
-            if get_save_by_user_and_post(request.user, post):
+            if PostService.get_save_by_user_and_post(request.user, post):
                 return Response(
                     {
                         "status": "error",
@@ -682,7 +682,7 @@ class SavePostView(APIView):
                 )
 
             # Create save
-            create_save(request.user, post)
+            PostService.create_save(request.user, post)
             
             return Response(
                 {
@@ -724,10 +724,10 @@ class SavePostView(APIView):
     def delete(self, request, post_id, *args, **kwargs):
         try:
             # Fetch the post
-            post = get_post_by_id(post_id)
+            post = PostService.get_post_by_id(post_id)
             
             # Check if saved
-            if not get_save_by_user_and_post(request.user, post):
+            if not PostService.get_save_by_user_and_post(request.user, post):
                 return Response(
                     {
                         "status": "error",
@@ -737,7 +737,7 @@ class SavePostView(APIView):
                     status=status.HTTP_400_BAD_REQUEST
                 )
                 
-            if not check_save_eligibility(request.user, post):
+            if not PostService.check_save_eligibility(request.user, post):
                 return Response(
                     {
                         "status": "error",
@@ -748,7 +748,7 @@ class SavePostView(APIView):
                 )
 
             # Delete save
-            delete_save(request.user, post)
+            PostService.delete_save(request.user, post)
             
             return Response(
                 {
@@ -794,7 +794,7 @@ class SavedPostListView(APIView):
     def get(self, request, *args, **kwargs):
         try:
             # Fetch the user's saved posts
-            posts = get_user_saved_posts(request.user)
+            posts = PostService.get_user_saved_posts(request.user)
             
             # Paginate the queryset
             paginator = self.pagination_class()
@@ -836,12 +836,12 @@ class UserPostListView(APIView):
     def get(self, request, user_id, *args, **kwargs):
         try:
             # Fetch posts for the specified user
-            posts = get_user_posts_by_id(user_id)
+            posts = PostService.get_user_posts_by_id(user_id)
             
             # Check eligibility for each post
             eligible_posts = []
             for post in posts:
-                if post_view_eligibility(request.user, post):
+                if PostService.post_view_eligibility(request.user, post):
                     eligible_posts.append(post)
             
             # Paginate the eligible posts
@@ -892,7 +892,7 @@ class UserPostDetailView(APIView):
     def get(self, request, user_id, post_id, *args, **kwargs):
         try:
             # Fetch the post
-            post = get_post_by_id(post_id)
+            post = PostService.get_post_by_id(post_id)
             
             # Verify the post belongs to the specified user
             if post.user.id != user_id:
@@ -906,7 +906,7 @@ class UserPostDetailView(APIView):
                 )
             
             # Check eligibility to view the post
-            if not post_view_eligibility(request.user, post):
+            if not PostService.post_view_eligibility(request.user, post):
                 return Response(
                     {
                         "status": "error",

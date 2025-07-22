@@ -1,28 +1,29 @@
 version: "3.8"
 
 services:
+  # Core Application
   web:
-    build: .
-    container_name: drf_scrawl_web
+    build:
+      context: .
+      dockerfile: docker/base/Dockerfile
     volumes:
       - .:/app
-    ports:
-      - "8000:8000"
+    # Port will be set in override files
     depends_on:
       db:
-        condition: service_started
+        condition: service_healthy
       redis:
-        condition: service_started
+        condition: service_healthy
       kafka:
         condition: service_healthy
     env_file:
       - .env
-    entrypoint: ["/app/entrypoint.sh"]
+    entrypoint: ["/app/docker/base/entrypoint.sh"]
     command: ["python", "manage.py", "runserver", "0.0.0.0:8000"]
 
+  # Database
   db:
-    image: postgres:14
-    container_name: drf_scrawl_db
+    image: postgres:14-alpine
     restart: always
     volumes:
       - postgres_data:/var/lib/postgresql/data
@@ -30,56 +31,54 @@ services:
       - POSTGRES_USER=${POSTGRES_USER}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
       - POSTGRES_DB=${POSTGRES_DB}
-    ports:
-      - "5434:5432"
+    # Port will be set in override files
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
+  # Redis Cache
   redis:
-    image: redis:7.2
-    container_name: drf_scrawl_redis
+    image: redis:7.2-alpine
     restart: always
     volumes:
       - redis_data:/data
-    ports:
-      - "6379:6379"
-    environment:
-      - REDIS_URL=${REDIS_URL}
+    # Port will be set in override files
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
 
+  # Kafka Infrastructure
   zookeeper:
     image: confluentinc/cp-zookeeper:7.5.0
-    container_name: drf_scrawl_zookeeper
     environment:
       ZOOKEEPER_CLIENT_PORT: 2181
       ZOOKEEPER_TICK_TIME: 2000
-      ZOOKEEPER_AUTOPURGE_PURGEINTERVAL: 1
-    ports:
-      - "2181:2181"
+    # Port will be set in override files
     volumes:
       - zookeeper_data:/var/lib/zookeeper/data
       - zookeeper_logs:/var/lib/zookeeper/log
 
   kafka:
     image: confluentinc/cp-kafka:7.5.0
-    container_name: drf_scrawl_kafka
     depends_on:
       - zookeeper
-    ports:
-      - "9092:9092"
+    # Port will be set in override files
     environment:
       KAFKA_BROKER_ID: 1
-      KAFKA_ZOOKEEPER_CONNECT: drf_scrawl_zookeeper:2181
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
       KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://drf_scrawl_kafka:9092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT
       KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
       KAFKA_NUM_PARTITIONS: 3
       KAFKA_DEFAULT_REPLICATION_FACTOR: 1
-      KAFKA_MIN_INSYNC_REPLICAS: 1
-      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
-      KAFKA_LOG_RETENTION_HOURS: 168
-      KAFKA_LOG_SEGMENT_BYTES: 1073741824
-      KAFKA_LOG_RETENTION_CHECK_INTERVAL_MS: 300000
     volumes:
       - kafka_data:/var/lib/kafka/data
     healthcheck:
@@ -90,58 +89,103 @@ services:
       retries: 10
       start_period: 30s
 
+  # Kafka Topic Initialization
   kafka-init:
     image: confluentinc/cp-kafka:7.5.0
-    container_name: drf_scrawl_kafka_init
     depends_on:
       kafka:
         condition: service_healthy
     command: |
       bash -c "
-        echo 'Creating Kafka topics...'
-        kafka-topics --create --bootstrap-server drf_scrawl_kafka:9092 --replication-factor 1 --partitions 3 --topic like.events --if-not-exists
-        kafka-topics --create --bootstrap-server drf_scrawl_kafka:9092 --replication-factor 1 --partitions 3 --topic follow.events --if-not-exists  
-        kafka-topics --create --bootstrap-server drf_scrawl_kafka:9092 --replication-factor 1 --partitions 3 --topic post.events --if-not-exists
-        kafka-topics --create --bootstrap-server drf_scrawl_kafka:9092 --replication-factor 1 --partitions 3 --topic feed_events_dlq --if-not-exists
+        kafka-topics --create --bootstrap-server kafka:9092 --replication-factor 1 --partitions 3 --topic like.events --if-not-exists
+        kafka-topics --create --bootstrap-server kafka:9092 --replication-factor 1 --partitions 3 --topic follow.events --if-not-exists  
+        kafka-topics --create --bootstrap-server kafka:9092 --replication-factor 1 --partitions 3 --topic post.events --if-not-exists
+        kafka-topics --create --bootstrap-server kafka:9092 --replication-factor 1 --partitions 3 --topic feed_events_dlq --if-not-exists
         echo 'Topics created successfully'
-        kafka-topics --bootstrap-server drf_scrawl_kafka:9092 --list
       "
 
+  # Application Consumers
   consumer:
-    build: .
-    container_name: drf_scrawl_consumer
+    build:
+      context: .
+      dockerfile: docker/base/Dockerfile
     volumes:
       - .:/app
     depends_on:
-      db:
-        condition: service_started
-      redis:
-        condition: service_started
       kafka-init:
         condition: service_completed_successfully
     env_file:
       - .env
-    entrypoint: ["/app/entrypoint.sh"]
+    entrypoint: ["/app/docker/base/entrypoint.sh"]
     command: ["python", "-u", "/app/scrawl/consumers.py"]
     restart: unless-stopped
 
   feed-consumer:
-    build: .
-    container_name: drf_scrawl_feed_consumer
+    build:
+      context: .
+      dockerfile: docker/base/Dockerfile
     volumes:
       - .:/app
     depends_on:
-      db:
-        condition: service_started
-      redis:
-        condition: service_started
       kafka:
         condition: service_healthy
     env_file:
       - .env
-    entrypoint: ["/app/entrypoint.sh"]
+    entrypoint: ["/app/docker/base/entrypoint.sh"]
     command: ["python", "-u", "/app/scrawl/feed_consumer.py"]
     restart: unless-stopped
+
+  # Monitoring Stack - Prometheus
+  prometheus:
+    image: prom/prometheus:latest
+    # Port will be set in override files
+    volumes:
+      - ./docker/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--web.console.libraries=/etc/prometheus/console_libraries"
+      - "--web.console.templates=/etc/prometheus/consoles"
+
+  # Monitoring Stack - Grafana
+  grafana:
+    image: grafana/grafana:latest
+    # Port will be set in override files
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./docker/monitoring/grafana:/etc/grafana/provisioning
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
+
+  # ELK Stack - Elasticsearch
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.11.0
+    environment:
+      - discovery.type=single-node
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+      - xpack.security.enabled=false
+    # Port will be set in override files
+    volumes:
+      - elasticsearch_data:/usr/share/elasticsearch/data
+
+  # ELK Stack - Logstash
+  logstash:
+    image: docker.elastic.co/logstash/logstash:8.11.0
+    # Port will be set in override files
+    volumes:
+      - ./docker/monitoring/logstash/pipeline:/usr/share/logstash/pipeline
+    depends_on:
+      - elasticsearch
+
+  # ELK Stack - Kibana
+  kibana:
+    image: docker.elastic.co/kibana/kibana:8.11.0
+    # Port will be set in override files
+    environment:
+      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+    depends_on:
+      - elasticsearch
 
 volumes:
   postgres_data:
@@ -149,3 +193,6 @@ volumes:
   kafka_data:
   zookeeper_data:
   zookeeper_logs:
+  prometheus_data:
+  grafana_data:
+  elasticsearch_data:

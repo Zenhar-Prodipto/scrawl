@@ -1,0 +1,87 @@
+version: "3.8"
+
+# Local Development Overrides (automatically loaded)
+services:
+  web:
+    container_name: drf_scrawl_web
+    environment:
+      - DEBUG=True
+      - ENVIRONMENT=local
+    ports:
+      - "${DJANGO_PORT:-8000}:8000"
+
+  db:
+    container_name: drf_scrawl_db
+    ports:
+      - "${DB_EXTERNAL_PORT:-5434}:5432"
+
+  redis:
+    container_name: drf_scrawl_redis
+    ports:
+      - "${REDIS_EXTERNAL_PORT:-6379}:6379"
+
+  zookeeper:
+    container_name: drf_scrawl_zookeeper
+    ports:
+      - "${ZOOKEEPER_EXTERNAL_PORT:-2181}:2181"
+
+  kafka:
+    container_name: drf_scrawl_kafka
+    ports:
+      - "${KAFKA_EXTERNAL_PORT:-9092}:9092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: drf_scrawl_zookeeper:2181
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://drf_scrawl_kafka:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_NUM_PARTITIONS: 3
+      KAFKA_DEFAULT_REPLICATION_FACTOR: 1
+
+  kafka-init:
+    container_name: drf_scrawl_kafka_init
+    command: |
+      bash -c "
+        echo 'Creating LOCAL Kafka topics...'
+        kafka-topics --create --bootstrap-server drf_scrawl_kafka:9092 --replication-factor 1 --partitions 3 --topic like.events --if-not-exists
+        kafka-topics --create --bootstrap-server drf_scrawl_kafka:9092 --replication-factor 1 --partitions 3 --topic follow.events --if-not-exists  
+        kafka-topics --create --bootstrap-server drf_scrawl_kafka:9092 --replication-factor 1 --partitions 3 --topic post.events --if-not-exists
+        kafka-topics --create --bootstrap-server drf_scrawl_kafka:9092 --replication-factor 1 --partitions 3 --topic feed_events_dlq --if-not-exists
+        echo 'LOCAL topics created successfully'
+        kafka-topics --bootstrap-server drf_scrawl_kafka:9092 --list
+      "
+
+  consumer:
+    container_name: drf_scrawl_consumer
+
+  feed-consumer:
+    container_name: drf_scrawl_feed_consumer
+
+  # Monitoring services - local configuration
+  prometheus:
+    container_name: drf_scrawl_prometheus
+    ports:
+      - "${PROMETHEUS_PORT:-9090}:9090"
+
+  grafana:
+    container_name: drf_scrawl_grafana
+    ports:
+      - "${GRAFANA_PORT:-3000}:3000"
+
+  elasticsearch:
+    container_name: drf_scrawl_elasticsearch
+    ports:
+      - "${ELASTICSEARCH_PORT:-9200}:9200"
+
+  logstash:
+    container_name: drf_scrawl_logstash
+    ports:
+      - "${LOGSTASH_PORT:-5000}:5000"
+
+  kibana:
+    container_name: drf_scrawl_kibana
+    ports:
+      - "${KIBANA_PORT:-5601}:5601"

@@ -1,0 +1,82 @@
+services:
+  web:
+    build:
+      context: .
+      dockerfile: docker/dev/Dockerfile
+    container_name: scrawl_dev_web
+    environment:
+      - DEBUG=False
+      - ENVIRONMENT=development
+    ports:
+      - "${DJANGO_DEV_PORT:-8001}:8000" # Uses env variable
+    entrypoint: ["/app/docker/dev/entrypoint.sh"]
+
+  db:
+    container_name: scrawl_dev_db
+    ports:
+      - "${DB_DEV_PORT:-5435}:5432" # Uses env variable
+    environment:
+      - POSTGRES_DB=scrawl_dev_db
+
+  redis:
+    container_name: scrawl_dev_redis
+    ports:
+      - "${REDIS_DEV_PORT:-6380}:6379" # Uses env variable
+
+  zookeeper:
+    container_name: scrawl_dev_zookeeper
+    ports:
+      - "${ZOOKEEPER_DEV_PORT:-2182}:2181" # Uses env variable
+
+  kafka:
+    container_name: scrawl_dev_kafka
+    ports:
+      - "${KAFKA_DEV_PORT:-9093}:9092" # Uses env variable
+    environment:
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://scrawl_dev_kafka:9092
+
+  kafka-init:
+    container_name: scrawl_dev_kafka_init
+    command: |
+      bash -c "
+        echo 'Creating DEV Kafka topics...'
+        kafka-topics --create --bootstrap-server scrawl_dev_kafka:9092 --replication-factor 1 --partitions 3 --topic like.events --if-not-exists
+        kafka-topics --create --bootstrap-server scrawl_dev_kafka:9092 --replication-factor 1 --partitions 3 --topic follow.events --if-not-exists  
+        kafka-topics --create --bootstrap-server scrawl_dev_kafka:9092 --replication-factor 1 --partitions 3 --topic post.events --if-not-exists
+        kafka-topics --create --bootstrap-server scrawl_dev_kafka:9092 --replication-factor 1 --partitions 3 --topic feed_events_dlq --if-not-exists
+        echo 'DEV topics created successfully'
+      "
+
+  consumer:
+    container_name: scrawl_dev_consumer
+
+  feed-consumer:
+    container_name: scrawl_dev_feed_consumer
+
+  # Monitoring Stack - Development ports
+  prometheus:
+    container_name: scrawl_dev_prometheus
+    ports:
+      - "9091:9090"
+
+  grafana:
+    container_name: scrawl_dev_grafana
+    ports:
+      - "3001:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=devpassword
+
+  elasticsearch:
+    container_name: scrawl_dev_elasticsearch
+    ports:
+      - "9201:9200"
+
+  logstash:
+    container_name: scrawl_dev_logstash
+    ports:
+      - "5001:5000"
+
+  kibana:
+    container_name: scrawl_dev_kibana
+    ports:
+      - "5602:5601"

@@ -1,0 +1,110 @@
+services:
+  web:
+    build:
+      context: .
+      dockerfile: docker/prod/Dockerfile.prod
+      target: production
+    container_name: scrawl_prod_web
+    environment:
+      - DEBUG=False
+      - ENVIRONMENT=production
+    ports:
+      - "${DJANGO_PROD_PORT:-80}:8000"
+    entrypoint: ["/app/docker/prod/entrypoint.sh"]
+    command:
+      [
+        "gunicorn",
+        "--bind",
+        "0.0.0.0:8000",
+        "--workers",
+        "4",
+        "scrawl.wsgi:application",
+      ]
+    # No volume mounting in production
+    restart: unless-stopped
+
+  db:
+    container_name: scrawl_prod_db
+    environment:
+      - POSTGRES_DB=scrawl_prod_db
+    # No external port exposure in production
+    restart: unless-stopped
+
+  redis:
+    container_name: scrawl_prod_redis
+    command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru
+    # No external port exposure in production
+    restart: unless-stopped
+
+  zookeeper:
+    container_name: scrawl_prod_zookeeper
+    # No external port exposure in production
+    restart: unless-stopped
+
+  kafka:
+    container_name: scrawl_prod_kafka
+    environment:
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://scrawl_prod_kafka:9092
+      KAFKA_LOG_RETENTION_HOURS: 24 # Shorter retention in prod
+    # No external port exposure in production
+    restart: unless-stopped
+
+  kafka-init:
+    container_name: scrawl_prod_kafka_init
+    command: |
+      bash -c "
+        echo 'Creating PRODUCTION Kafka topics...'
+        kafka-topics --create --bootstrap-server scrawl_prod_kafka:9092 --replication-factor 1 --partitions 6 --topic like.events --if-not-exists
+        kafka-topics --create --bootstrap-server scrawl_prod_kafka:9092 --replication-factor 1 --partitions 6 --topic follow.events --if-not-exists  
+        kafka-topics --create --bootstrap-server scrawl_prod_kafka:9092 --replication-factor 1 --partitions 6 --topic post.events --if-not-exists
+        kafka-topics --create --bootstrap-server scrawl_prod_kafka:9092 --replication-factor 1 --partitions 6 --topic feed_events_dlq --if-not-exists
+        echo 'PRODUCTION topics created successfully'
+      "
+
+  consumer:
+    build:
+      context: .
+      dockerfile: docker/prod/Dockerfile.prod
+      target: production
+    container_name: scrawl_prod_consumer
+    restart: unless-stopped
+
+  feed-consumer:
+    build:
+      context: .
+      dockerfile: docker/prod/Dockerfile.prod
+      target: production
+    container_name: scrawl_prod_feed_consumer
+    restart: unless-stopped
+
+  # Monitoring Stack - Production (secure, no external ports)
+  prometheus:
+    container_name: scrawl_prod_prometheus
+    # No external ports in production (access via nginx proxy)
+    restart: unless-stopped
+
+  grafana:
+    container_name: scrawl_prod_grafana
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-changeme}
+      - GF_SECURITY_DISABLE_GRAVATAR=true
+      - GF_USERS_ALLOW_SIGN_UP=false
+    # No external ports in production (access via nginx proxy)
+    restart: unless-stopped
+
+  elasticsearch:
+    container_name: scrawl_prod_elasticsearch
+    environment:
+      - "ES_JAVA_OPTS=-Xms1g -Xmx1g" # More memory in production
+    # No external ports in production
+    restart: unless-stopped
+
+  logstash:
+    container_name: scrawl_prod_logstash
+    # No external ports in production
+    restart: unless-stopped
+
+  kibana:
+    container_name: scrawl_prod_kibana
+    # No external ports in production
+    restart: unless-stopped

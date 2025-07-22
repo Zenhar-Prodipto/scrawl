@@ -8,18 +8,8 @@ from users.services import UserService
 from .models import Post, PostImage, Tag, Like, Comment, Save
 from scrawl.config.kafka_config import producer, delivery_report
 import json
-import redis
+from scrawl.core.caching import cache_manager, invalidate
 from django.conf import settings
-
-# Redis client
-redis_client = redis.Redis.from_url(settings.REDIS_URL)
-
-# Cache keys
-POST_CACHE_KEY = "post:{post_id}"
-USER_POSTS_CACHE_KEY = "user_posts:{user_id}"
-SAVED_POSTS_CACHE_KEY = "saved_posts:{user_id}"
-LIKE_EXISTS_CACHE_KEY = "like_exists:{user_id}:{post_id}"
-COMMENT_EXISTS_CACHE_KEY = "comment_exists:{user_id}:{post_id}"
 
 class PostService:
     @classmethod
@@ -65,8 +55,7 @@ class PostService:
                 producer.flush()  # Ensure delivery (remove in prod)
 
                 # Invalidate caches
-                redis_client.delete(POST_CACHE_KEY.format(post_id=post.id))
-                redis_client.delete(USER_POSTS_CACHE_KEY.format(user_id=user.id))
+                invalidate.invalidate_post_cache(post_id=post.id,user_id=user.id)
                 print("Cache invalidated for post and user posts:", post.id, user.id, flush=True)
 
                 return post
@@ -118,24 +107,18 @@ class PostService:
             DatabaseError: If a database error occurs.
             Exception: For unexpected errors.
         """
-        try:
-            cache_key = POST_CACHE_KEY.format(post_id=post_id)
-            cached_post = redis_client.get(cache_key)
-            if cached_post:
+        try: 
+            cached = cache_manager.get('post_detail', post_id=post_id)
+            if cached is not None:
                 print("Cache hit for post:", post_id, flush=True)
-                return Post.objects.prefetch_related(
-                    'post_images',
-                    'tags',
-                    Prefetch('likes', queryset=Like.objects.select_related('user')),
-                    Prefetch('comments', queryset=Comment.objects.select_related('user'))
-                ).get(id=post_id)
+                return cached
             post = Post.objects.prefetch_related(
                 'post_images',
                 'tags',
                 Prefetch('likes', queryset=Like.objects.select_related('user')),
                 Prefetch('comments', queryset=Comment.objects.select_related('user'))
             ).get(id=post_id)
-            redis_client.setex(cache_key, 300, post.id)  # 5m TTL
+            cache_manager.set(key_type='post_detail',value= post, post_id=post_id)
             print("Cache miss for post:", post_id, flush=True)
             return post
         except Post.DoesNotExist:
@@ -148,36 +131,31 @@ class PostService:
     @classmethod
     def get_user_posts(cls, user):
         """
-        Fetch all posts for the authenticated user, optimized for listing.
-        Args:
-            user (User): The authenticated user.
-        Returns:
-            QuerySet: A queryset of the user's posts.
-        Raises:
-            DatabaseError: If a database error occurs.
-            Exception: For unexpected errors.
+        Fetch all posts for the authenticated user (own posts).
         """
         try:
-            cache_key = USER_POSTS_CACHE_KEY.format(user_id=user.id)
-            cached_posts = redis_client.get(cache_key)
-            if cached_posts:
+            # Check cache first
+            cached = cache_manager.get('post_list', user_id=user.id)
+            if cached is not None:
                 print("Cache hit for user posts:", user.id, flush=True)
-                post_ids = json.loads(cached_posts)
-                return Post.objects.prefetch_related(
-                    'post_images',
-                    'tags',
-                    Prefetch('likes', queryset=Like.objects.select_related('user')),
-                    Prefetch('comments', queryset=Comment.objects.select_related('user'))
-                ).filter(id__in=post_ids).order_by('-created_at')
+                return cached  
+                
+            # Database query if cache miss
             posts = Post.objects.filter(user=user).prefetch_related(
                 'post_images',
                 'tags',
                 Prefetch('likes', queryset=Like.objects.select_related('user')),
                 Prefetch('comments', queryset=Comment.objects.select_related('user'))
             ).order_by('-created_at')
-            redis_client.setex(cache_key, 300, json.dumps([p.id for p in posts]))  # 5m TTL
+            
+            # Convert to list for caching
+            posts_list = list(posts)
+            
+            # Cache the full objects
+            cache_manager.set('post_list', posts_list, user_id=user.id)
             print("Cache miss for user posts:", user.id, flush=True)
-            return posts
+            return posts_list
+            
         except DatabaseError as e:
             raise DatabaseError(f"Database error while fetching posts: {str(e)}")
         except Exception as e:
@@ -237,8 +215,7 @@ class PostService:
                 producer.flush()  # Ensure delivery (remove in prod)
 
                 # Invalidate caches
-                redis_client.delete(POST_CACHE_KEY.format(post_id=post.id))
-                redis_client.delete(USER_POSTS_CACHE_KEY.format(user_id=user.id))
+                invalidate.invalidate_post_cache(post_id=post.id, user_id=user.id)
                 print("Cache invalidated for post and user posts:", post.id, user.id, flush=True)
 
                 return post
@@ -275,8 +252,7 @@ class PostService:
                 producer.flush()  # Ensure delivery (remove in prod)
 
                 # Invalidate caches
-                redis_client.delete(POST_CACHE_KEY.format(post_id=post_id))
-                redis_client.delete(USER_POSTS_CACHE_KEY.format(user_id=user.id))
+                invalidate.invalidate_post_cache(post_id=post_id, user_id=user.id)
                 print("Cache invalidated for post and user posts:", post_id, user.id, flush=True)
         except DatabaseError as e:
             raise DatabaseError(f"Database error during post deletion: {str(e)}")
@@ -375,8 +351,7 @@ class PostService:
                 producer.flush()  # Ensure delivery (remove in prod)
 
                 # Invalidate caches
-                redis_client.delete(POST_CACHE_KEY.format(post_id=post.id))
-                redis_client.delete(LIKE_EXISTS_CACHE_KEY.format(user_id=requesting_user.id, post_id=post.id))
+                invalidate.invalidate_interaction_cache(user_id=requesting_user.id,post_id=post.id, interaction_type='like')
                 print("Cache invalidated for post and like status:", post.id, requesting_user.id, flush=True)
 
                 return like
@@ -403,8 +378,7 @@ class PostService:
                     like.delete()
 
                     # Invalidate caches
-                    redis_client.delete(POST_CACHE_KEY.format(post_id=post.id))
-                    redis_client.delete(LIKE_EXISTS_CACHE_KEY.format(user_id=requesting_user.id, post_id=post.id))
+                    invalidate.invalidate_interaction_cache(user_id=requesting_user.id, post_id=post.id, interaction_type='like')
                     print("Cache invalidated for post and like status:", post.id, requesting_user.id, flush=True)
         except DatabaseError as e:
             raise DatabaseError(f"Database error while deleting like: {str(e)}")
@@ -426,13 +400,12 @@ class PostService:
             Exception: For unexpected errors.
         """
         try:
-            cache_key = LIKE_EXISTS_CACHE_KEY.format(user_id=requesting_user.id, post_id=post.id)
-            cached_status = redis_client.get(cache_key)
-            if cached_status is not None:
+            cached = cache_manager.get('like_exists', user_id=requesting_user.id, post_id=post.id)
+            if cached is not None:
                 print("Cache hit for like existence:", requesting_user.id, post.id)
-                return json.loads(cached_status)
+                return cached
             status = Like.objects.filter(user=requesting_user, post=post).exists()
-            redis_client.setex(cache_key, 60, json.dumps(status))  # 1m TTL
+            cache_manager.set('like_exists', status, user_id=requesting_user.id, post_id=post.id)
             print("Cache miss for like existence:", requesting_user.id, post.id, flush=True)
             return status
         except DatabaseError as e:
@@ -513,8 +486,7 @@ class PostService:
                 comment = Comment.objects.create(user=requesting_user, post=post, text=text)
 
                 # Invalidate caches
-                redis_client.delete(POST_CACHE_KEY.format(post_id=post.id))
-                redis_client.delete(COMMENT_EXISTS_CACHE_KEY.format(user_id=requesting_user.id, post_id=post.id))
+                invalidate.invalidate_interaction_cache(user_id=requesting_user.id, post_id=post.id, interaction_type='comment')
                 print("Cache invalidated for post and comment status:", post.id, requesting_user.id, flush=True)
 
                 return comment
@@ -537,13 +509,12 @@ class PostService:
             Exception: For unexpected errors.
         """
         try:
-            cache_key = COMMENT_EXISTS_CACHE_KEY.format(user_id=requesting_user.id, post_id=post.id)
-            cached_status = redis_client.get(cache_key)
-            if cached_status is not None:
+            cached = cache_manager.get('comment_exists', user_id=requesting_user.id, post_id=post.id)
+            if cached is not None:
                 print("Cache hit for comment existence:", requesting_user.id, post.id, flush=True)
-                return json.loads(cached_status)
+                return cached
             status = Comment.objects.filter(user=requesting_user, post=post).exists()
-            redis_client.setex(cache_key, 60, json.dumps(status))  # 1m TTL
+            cache_manager.set('comment_exists', status, user_id=requesting_user.id, post_id=post.id)
             print("Cache miss for comment existence:", requesting_user.id, post.id, flush=True)
             return status
         except DatabaseError as e:
@@ -615,8 +586,7 @@ class PostService:
                 comment.delete()
 
                 # Invalidate caches
-                redis_client.delete(POST_CACHE_KEY.format(post_id=post.id))
-                redis_client.delete(COMMENT_EXISTS_CACHE_KEY.format(user_id=comment.user.id, post_id=post.id))
+                invalidate.invalidate_interaction_cache(user_id=comment.user.id, post_id=post.id, interaction_type='comment')
                 print("Cache invalidated for post and comment status:", post.id, comment.user.id, flush=True)
         except DatabaseError as e:
             raise DatabaseError(f"Database error while deleting comment: {str(e)}")
@@ -642,8 +612,7 @@ class PostService:
                 save = Save.objects.create(user=user, post=post)
 
                 # Invalidate caches
-                redis_client.delete(SAVED_POSTS_CACHE_KEY.format(user_id=user.id))
-                redis_client.delete(POST_CACHE_KEY.format(post_id=post.id))
+                invalidate.invalidate_interaction_cache(user_id=user.id, post_id=post.id, interaction_type='save')
                 print("Cache invalidated for saved posts and post:", user.id, post.id, flush=True)
 
                 return save
@@ -661,8 +630,7 @@ class PostService:
                     save.delete()
 
                     # Invalidate caches
-                    redis_client.delete(SAVED_POSTS_CACHE_KEY.format(user_id=user.id))
-                    redis_client.delete(POST_CACHE_KEY.format(post_id=post.id))
+                    invalidate.invalidate_interaction_cache(user_id=user.id, post_id=post.id, interaction_type='save')
                     print("Cache invalidated for saved posts and post:", user.id, post.id, flush=True)
         except DatabaseError as e:
             raise DatabaseError(f"Database error while deleting save: {str(e)}")
@@ -715,66 +683,57 @@ class PostService:
     @classmethod
     def get_user_saved_posts(cls, user):
         try:
-            cache_key = SAVED_POSTS_CACHE_KEY.format(user_id=user.id)
-            cached_posts = redis_client.get(cache_key)
-            if cached_posts:
+            cached = cache_manager.get('post_saved', user_id=user.id)
+            if cached is not None:
                 print("Cache hit for saved posts:", user.id, flush=True)
-                post_ids = json.loads(cached_posts)
-                return Post.objects.prefetch_related(
-                    'post_images',
-                    'tags',
-                    Prefetch('likes', queryset=Like.objects.select_related('user')),
-                    Prefetch('comments', queryset=Comment.objects.select_related('user'))
-                ).filter(id__in=post_ids).order_by('-created_at')
+                return cached
+
             saved_posts = Post.objects.filter(saves__user=user).prefetch_related(
                 'post_images',
                 'tags',
                 Prefetch('likes', queryset=Like.objects.select_related('user')),
                 Prefetch('comments', queryset=Comment.objects.select_related('user'))
             ).order_by('-created_at')
-            redis_client.setex(cache_key, 300, json.dumps([p.id for p in saved_posts]))  # 5m TTL
+            saved_posts_list = list(saved_posts)
+            cache_manager.set('post_saved', saved_posts_list, user_id=user.id)
             print("Cache miss for saved posts:", user.id, flush=True)
-            return saved_posts
+            return saved_posts_list
         except DatabaseError as e:
             raise DatabaseError(f"Database error while fetching saved posts: {str(e)}")
         except Exception as e:
             raise Exception(f"Unexpected error while fetching saved posts: {str(e)}")
     
     @classmethod
-    def get_user_posts_by_id(cls, user_id: int) -> User:
+    def get_user_posts_by_id(cls, user_id: int):
         """
-        Fetch all posts for a specified user ID, optimized for listing.
-        Args:
-            user_id (int): The ID of the user whose posts to fetch.
-        Returns:
-            QuerySet: A queryset of the user's posts.
-        Raises:
-            User.DoesNotExist: If the user doesn't exist.
-            DatabaseError: If a database error occurs.
-            Exception: For unexpected errors.
+        Fetch all posts for a specified user ID (viewing another user's profile).
         """
         try:
-            user = User.objects.get(id=user_id)
-            cache_key = USER_POSTS_CACHE_KEY.format(user_id=user_id)
-            cached_posts = redis_client.get(cache_key)
-            if cached_posts:
+            # Verify user exists first
+            user = User.objects.get(id=user_id, is_deleted=False)
+            
+            # Check cache first
+            cached = cache_manager.get('post_user_posts', user_id=user_id)
+            if cached is not None:
                 print("Cache hit for user posts:", user_id, flush=True)
-                post_ids = json.loads(cached_posts)
-                return Post.objects.prefetch_related(
-                    'post_images',
-                    'tags',
-                    Prefetch('likes', queryset=Like.objects.select_related('user')),
-                    Prefetch('comments', queryset=Comment.objects.select_related('user'))
-                ).filter(id__in=post_ids).order_by('-created_at')
+                return cached  
+                
+            # Database query if cache miss
             posts = Post.objects.filter(user=user).prefetch_related(
                 'post_images',
                 'tags',
                 Prefetch('likes', queryset=Like.objects.select_related('user')),
                 Prefetch('comments', queryset=Comment.objects.select_related('user'))
             ).order_by('-created_at')
-            redis_client.setex(cache_key, 300, json.dumps([p.id for p in posts]))  # 5m TTL
+            
+            # Convert to list for caching
+            posts_list = list(posts)
+            
+            # Cache the full objects
+            cache_manager.set('post_user_posts', posts_list, user_id=user_id)
             print("Cache miss for user posts:", user_id, flush=True)
-            return posts
+            return posts_list
+            
         except User.DoesNotExist:
             raise User.DoesNotExist("User not found.")
         except DatabaseError as e:

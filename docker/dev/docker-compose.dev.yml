@@ -8,30 +8,30 @@ services:
       - DEBUG=False
       - ENVIRONMENT=development
     ports:
-      - "${DJANGO_DEV_PORT:-8001}:8000" # Uses env variable
+      - "${DJANGO_DEV_PORT:-8001}:8000"
     entrypoint: ["/app/docker/dev/entrypoint.sh"]
 
   db:
     container_name: scrawl_dev_db
     ports:
-      - "${DB_DEV_PORT:-5435}:5432" # Uses env variable
+      - "${DB_DEV_PORT:-5435}:5432"
     environment:
       - POSTGRES_DB=scrawl_dev_db
 
   redis:
     container_name: scrawl_dev_redis
     ports:
-      - "${REDIS_DEV_PORT:-6380}:6379" # Uses env variable
+      - "${REDIS_DEV_PORT:-6380}:6379"
 
   zookeeper:
     container_name: scrawl_dev_zookeeper
     ports:
-      - "${ZOOKEEPER_DEV_PORT:-2182}:2181" # Uses env variable
+      - "${ZOOKEEPER_DEV_PORT:-2182}:2181"
 
   kafka:
     container_name: scrawl_dev_kafka
     ports:
-      - "${KAFKA_DEV_PORT:-9093}:9092" # Uses env variable
+      - "${KAFKA_DEV_PORT:-9093}:9092"
     environment:
       KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://scrawl_dev_kafka:9092
 

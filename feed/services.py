@@ -1,4 +1,3 @@
-import redis
 import json
 import logging
 from typing import List, Dict, Any, Optional
@@ -11,17 +10,11 @@ from posts.services import PostService
 from posts.models import Post, Like, Comment, Save
 from users.models import User
 from datetime import datetime, timedelta
-from django.utils import timezone  # Add this for timezone handling
+from django.utils import timezone  
+from scrawl.core.caching import cache_manager, invalidate
 
 logger = logging.getLogger(__name__)
 
-# Redis client
-redis_client = redis.Redis.from_url(settings.REDIS_URL)
-
-# Cache keys
-FEED_CACHE_KEY = "feed:{user_id}:page:{page}"
-FEED_META_KEY = "feed_meta:{user_id}"
-USER_FOLLOWING_KEY = "following:{user_id}"
 
 # Config
 FEED_PAGE_SIZE = 10
@@ -31,13 +24,13 @@ MAX_FEED_SIZE = 1000  # Limit total feed size
 class FeedService:
     @staticmethod
     def _get_user_following_cached(user_id: int) -> set:
-        cache_key = USER_FOLLOWING_KEY.format(user_id=user_id)
-        cached = redis_client.get(cache_key)
+        cached = cache_manager.get('user_following', user_id=user_id)
         if cached:
-            return set(json.loads(cached))
-        following = FollowService.get_following(user_id)  # Returns list of User objects
-        following_ids = set(user.id for user in following)  # Extract IDs manually
-        redis_client.setex(cache_key, CACHE_TIMEOUT, json.dumps(list(following_ids)))
+            return set(cached)
+        
+        following = FollowService.get_following(user_id) # Returns list of User objects
+        following_ids = set(user.id for user in following) # Extract IDs manually
+        cache_manager.set('user_following', list(following_ids), user_id=user_id)
         return following_ids
 
     @staticmethod
@@ -149,15 +142,12 @@ class FeedService:
     @staticmethod
     def get_user_feed(user: User, page: int = 1) -> Dict[str, Any]:
         try:
-            cache_key = FEED_CACHE_KEY.format(user_id=user.id, page=page)
-            meta_key = FEED_META_KEY.format(user_id=user.id)
-
-            cached_page = redis_client.get(cache_key)
-            cached_meta = redis_client.get(meta_key)
+            cached_page = cache_manager.get('feed_page', user_id=user.id, page=page)
+            cached_meta = cache_manager.get('user_feed', user_id=user.id)  # For metadata
 
             if cached_page and cached_meta:
-                page_data = json.loads(cached_page)
-                meta_data = json.loads(cached_meta)
+                page_data = cached_page      
+                meta_data = cached_meta      
                 post_ids = [item['post_id'] for item in page_data]
                 posts = Post.objects.filter(id__in=post_ids).select_related('user').prefetch_related(
                     'post_images', 'tags', 'likes', 'comments', 'saves'
@@ -179,7 +169,7 @@ class FeedService:
 
             # Cache metadata
             meta_data = {'total_posts': total_posts, 'total_pages': total_pages, 'generated_at': datetime.now().isoformat()}
-            redis_client.setex(meta_key, CACHE_TIMEOUT, json.dumps(meta_data))
+            cache_manager.set('user_feed', meta_data, user_id=user.id)  
 
             # Cache pages
             for p in range(1, total_pages + 1):
@@ -187,8 +177,7 @@ class FeedService:
                 end_idx = start_idx + FEED_PAGE_SIZE
                 page_posts = feed_posts[start_idx:end_idx]
                 page_data = [{'post_id': item['post'].id, 'source': item['source']} for item in page_posts]
-                page_cache_key = FEED_CACHE_KEY.format(user_id=user.id, page=p)
-                redis_client.setex(page_cache_key, CACHE_TIMEOUT, json.dumps(page_data))
+                cache_manager.set('feed_page', page_data, user_id=user.id, page=p) 
 
             # Return requested page
             start_idx = (page - 1) * FEED_PAGE_SIZE
@@ -208,15 +197,9 @@ class FeedService:
         except Exception as e:
             logger.error(f"Unexpected error generating feed for user {user.id}: {e}")
             raise Exception(f"Unexpected error while generating feed: {str(e)}")
-
     @staticmethod
     def invalidate_user_feed(user_id: int):
-        pattern = f"feed:{user_id}:*"
-        keys = redis_client.keys(pattern)
-        if keys:
-            redis_client.delete(*keys)
-        following_key = USER_FOLLOWING_KEY.format(user_id=user_id)
-        redis_client.delete(following_key)
+        invalidate.invalidate_feed_cache(user_id)
         logger.info(f"Invalidated feed cache for user {user_id}")
 
     @staticmethod

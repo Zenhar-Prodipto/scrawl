@@ -5,16 +5,7 @@ from django.db import DatabaseError, transaction
 from django.core.exceptions import ObjectDoesNotExist
 from scrawl.config.kafka_config import producer, delivery_report
 import json
-import redis
-from django.conf import settings
-
-# Redis client
-redis_client = redis.Redis.from_url(settings.REDIS_URL)
-
-# Cache keys
-FOLLOWERS_CACHE_KEY = "followers:{user_id}"
-FOLLOWING_CACHE_KEY = "following:{user_id}"
-FOLLOW_STATUS_CACHE_KEY = "follow_status:{user_id}:{target_id}"
+from scrawl.core.caching import cache_manager, invalidate
 
 class FollowService:
     @classmethod
@@ -41,9 +32,8 @@ class FollowService:
             producer.flush()  # Ensure delivery for simplicity (remove in prod for async)
             
             # Invalidate caches
-            redis_client.delete(FOLLOWERS_CACHE_KEY.format(user_id=target_user.id))
-            redis_client.delete(FOLLOWING_CACHE_KEY.format(user_id=user.id))
-            redis_client.delete(FOLLOW_STATUS_CACHE_KEY.format(user_id=user.id, target_id=target_user.id))
+            invalidate.invalidate_follow_relationship_cache(user.id, target_user.id)
+
             
             return follow
         except User.DoesNotExist:
@@ -74,10 +64,7 @@ class FollowService:
                 )
                 producer.flush()  # Ensure delivery (remove in prod)
             
-            # Invalidate caches
-            redis_client.delete(FOLLOWERS_CACHE_KEY.format(user_id=target_user.id))
-            redis_client.delete(FOLLOWING_CACHE_KEY.format(user_id=user.id))
-            redis_client.delete(FOLLOW_STATUS_CACHE_KEY.format(user_id=user.id, target_id=target_user.id))
+            invalidate.invalidate_follow_relationship_cache(user.id, target_user.id)
             print("Cache invalidated for follower/following/status:", target_user.id, user.id, flush=True)
         except User.DoesNotExist:
             raise User.DoesNotExist("Target user does not exist.")
@@ -87,16 +74,14 @@ class FollowService:
     @classmethod
     def get_followers(cls, user_id: int) -> list[User]:
         try:
-            cache_key = FOLLOWERS_CACHE_KEY.format(user_id=user_id)
-            cached_followers = redis_client.get(cache_key)
-            if cached_followers:
+            cached = cache_manager.get('user_followers', user_id=user_id)
+            if cached is not None:
                 print("Cache hit for followers:", user_id, flush=True)
-                follower_ids = json.loads(cached_followers)
-                return list(User.objects.filter(id__in=follower_ids, is_deleted=False))
+                return list(User.objects.filter(id__in=cached, is_deleted=False))
             user = User.objects.get(id=user_id, is_deleted=False)
             follow_relationships = user.followers.all()
             followers = list(User.objects.filter(id__in=follow_relationships.values('follower_id'), is_deleted=False))
-            redis_client.setex(cache_key, 300, json.dumps([f.id for f in followers]))  # 5m TTL
+            cache_manager.set('user_followers', [f.id for f in followers], user_id=user_id)
             print("Cache miss for followers:", user_id, flush=True)
             return followers
         except User.DoesNotExist:
@@ -107,16 +92,14 @@ class FollowService:
     @classmethod
     def get_following(cls, user_id: int) -> list[User]:
         try:
-            cache_key = FOLLOWING_CACHE_KEY.format(user_id=user_id)
-            cached_following = redis_client.get(cache_key)
-            if cached_following:
+            cached = cache_manager.get('user_following', user_id=user_id)
+            if cached is not None:
                 print("Cache hit for following:", user_id, flush=True)
-                following_ids = json.loads(cached_following)
-                return list(User.objects.filter(id__in=following_ids, is_deleted=False))
+                return list(User.objects.filter(id__in=cached, is_deleted=False))
             user = User.objects.get(id=user_id, is_deleted=False)
             follow_relationships = user.following.all()
             following = list(User.objects.filter(id__in=follow_relationships.values('followed_id'), is_deleted=False))
-            redis_client.setex(cache_key, 300, json.dumps([f.id for f in following]))  # 5m TTL
+            cache_manager.set('user_following', [f.id for f in following], user_id=user_id)
             print("Cache miss for following:", user_id, flush=True)
             return following
         except User.DoesNotExist:
@@ -127,14 +110,13 @@ class FollowService:
     @classmethod
     def check_follow_status(cls, current_user: User, target_id: int) -> bool:
         try:
-            cache_key = FOLLOW_STATUS_CACHE_KEY.format(user_id=current_user.id, target_id=target_id)
-            cached_status = redis_client.get(cache_key)
-            if cached_status:
+            cached = cache_manager.get('follow_exists', follower_id=current_user.id, followed_id=target_id)
+            if cached is not None:  
                 print("Cache hit for follow status:", current_user.id, target_id, flush=True)
-                return json.loads(cached_status)
+                return cached
             target_user = User.objects.get(id=target_id, is_deleted=False)
             status = Follow.objects.filter(follower=current_user, followed=target_user).exists()
-            redis_client.setex(cache_key, 60, json.dumps(status))  # 1m TTL
+            cache_manager.set('follow_exists', status, follower_id=current_user.id, followed_id=target_id)
             print("Cache miss for follow status:", current_user.id, target_id, flush=True)
             return status
         except User.DoesNotExist:

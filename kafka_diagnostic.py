@@ -1,243 +1,364 @@
 #!/usr/bin/env python3
 """
-Kafka Diagnostic Script
-Run this to diagnose your Kafka setup issues.
+Kafka Diagnostic Script for Refactored Scrawl Architecture
+Tests the new centralized messaging system with event publishers and consumers.
 """
 
 import os
 import sys
 import time
 import json
-from confluent_kafka import Producer, Consumer, KafkaError
-from confluent_kafka.admin import AdminClient, NewTopic
-import logging
+import django
+from typing import Dict, Any, List
 
+# Django setup
+sys.path.append(os.path.abspath('.'))
+os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'scrawl.settings')
+django.setup()
+
+import logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-def test_kafka_connection(bootstrap_servers):
-    """Test basic Kafka connection"""
-    logger.info("=== Testing Kafka Connection ===")
+def test_imports():
+    """Test that all refactored imports work correctly."""
+    logger.info("=== Testing Refactored Import System ===")
     
     try:
-        admin_client = AdminClient({'bootstrap.servers': bootstrap_servers})
-        metadata = admin_client.list_topics(timeout=10)
-        logger.info(f"✓ Successfully connected to Kafka at {bootstrap_servers}")
-        logger.info(f"✓ Available topics: {list(metadata.topics.keys())}")
+        # Test core messaging imports
+        from scrawl.core.messaging import kafka_manager, event_publisher, EventType
+        logger.info("✅ Core messaging imports successful")
+        
+        # Test consumer imports
+        from scrawl.core.messaging.consumers.base_consumer import BaseConsumer
+        from scrawl.core.messaging.consumers.feed_event_consumer import FeedEventConsumer
+        from scrawl.core.messaging.consumers.general_event_consumer import GeneralEventConsumer
+        logger.info("✅ Consumer imports successful")
+        
+        # Test event system imports
+        from scrawl.core.messaging.events.event_types import event_registry
+        from scrawl.core.messaging.events.event_handlers import event_handler_registry
+        logger.info("✅ Event system imports successful")
+        
         return True
+        
     except Exception as e:
-        logger.error(f"✗ Failed to connect to Kafka: {e}")
+        logger.error(f"❌ Import test failed: {e}")
         return False
 
-def test_topic_creation(bootstrap_servers):
-    """Test topic creation"""
-    logger.info("=== Testing Topic Creation ===")
-    
-    admin_client = AdminClient({'bootstrap.servers': bootstrap_servers})
-    test_topic = "diagnostic.test"
+def test_kafka_connection():
+    """Test Kafka connection with new architecture."""
+    logger.info("=== Testing Kafka Connection (New Architecture) ===")
     
     try:
-        # Create test topic
-        new_topic = NewTopic(test_topic, num_partitions=1, replication_factor=1)
-        fs = admin_client.create_topics([new_topic])
+        from scrawl.core.messaging import kafka_manager
         
-        for topic, f in fs.items():
-            try:
-                f.result(timeout=10)
-                logger.info(f"✓ Successfully created topic: {topic}")
-            except Exception as e:
-                if "already exists" in str(e).lower():
-                    logger.info(f"✓ Topic {topic} already exists")
-                else:
-                    logger.error(f"✗ Failed to create topic {topic}: {e}")
-                    return False
-                    
-        # Wait for topic to be available
-        time.sleep(2)
+        # Test connection
+        is_connected = kafka_manager.is_connected()
+        logger.info(f"✅ Kafka connected: {is_connected}")
         
-        # Verify topic exists
-        metadata = admin_client.list_topics(timeout=10)
-        if test_topic in metadata.topics:
-            logger.info(f"✓ Topic {test_topic} is available")
-            return True
-        else:
-            logger.error(f"✗ Topic {test_topic} not found after creation")
-            return False
+        if is_connected:
+            # Get connection info
+            info = kafka_manager.get_connection_info()
+            logger.info(f"✅ Cluster ID: {info.get('cluster_id', 'N/A')}")
+            logger.info(f"✅ Bootstrap servers: {info.get('bootstrap_servers', 'N/A')}")
             
+            # List topics
+            topics = [t['name'] for t in info.get('topics', [])]
+            logger.info(f"✅ Available topics: {topics}")
+            
+            # Check required topics
+            required_topics = ['follow.events', 'post.events', 'like.events', 'comment.events', 'feed_events_dlq']
+            missing = set(required_topics) - set(topics)
+            if missing:
+                logger.warning(f"⚠️ Missing topics: {missing}")
+            else:
+                logger.info("✅ All required topics present")
+        
+        return is_connected
+        
     except Exception as e:
-        logger.error(f"✗ Topic creation failed: {e}")
+        logger.error(f"❌ Kafka connection test failed: {e}")
         return False
 
-def test_producer(bootstrap_servers):
-    """Test message production"""
-    logger.info("=== Testing Producer ===")
-    
-    producer_config = {
-        'bootstrap.servers': bootstrap_servers,
-        'client.id': 'diagnostic-producer'
-    }
+def test_event_schema_system():
+    """Test the new event schema and registry system."""
+    logger.info("=== Testing Event Schema System ===")
     
     try:
-        producer = Producer(producer_config)
-        test_topic = "diagnostic.test"
-        test_message = {"test": "message", "timestamp": time.time()}
+        from scrawl.core.messaging.events.event_types import EventType, event_registry
         
-        def delivery_callback(err, msg):
-            if err:
-                logger.error(f"✗ Message delivery failed: {err}")
-            else:
-                logger.info(f"✓ Message delivered to {msg.topic()} [{msg.partition()}] at offset {msg.offset()}")
+        # Test event types enumeration
+        event_types = event_registry.get_all_event_types()
+        logger.info(f"✅ Total event types: {len(event_types)}")
+        logger.info(f"   Sample types: {event_types[:5]}")
         
-        producer.produce(
-            test_topic,
-            value=json.dumps(test_message),
-            callback=delivery_callback
+        # Test event creation
+        test_event = event_registry.create_event(
+            EventType.POST_CREATED,
+            post_id=999,
+            user_id=1,
+            privacy='public'
+        )
+        logger.info(f"✅ Event creation successful: {test_event.event_type}")
+        
+        # Test event validation
+        valid, error = event_registry.validate_event_data(
+            EventType.FOLLOW_CREATED,
+            {'follower_id': 1, 'followed_id': 2, 'is_super_follower': False}
+        )
+        logger.info(f"✅ Event validation: {valid}, error: {error}")
+        
+        # Test topic mapping
+        topic = event_registry.get_topic_for_event(EventType.POST_CREATED)
+        logger.info(f"✅ Topic mapping works: {EventType.POST_CREATED} -> {topic}")
+        
+        return True
+        
+    except Exception as e:
+        logger.error(f"❌ Event schema test failed: {e}")
+        return False
+
+def test_event_publisher():
+    """Test the new centralized event publisher."""
+    logger.info("=== Testing Event Publisher ===")
+    
+    try:
+        from scrawl.core.messaging import event_publisher
+        
+        # Test different event types
+        test_events = [
+            ('post_created', lambda: event_publisher.publish_post_event(
+                'post_created', post_id=999, user_id=1, privacy='public'
+            )),
+            ('follow_created', lambda: event_publisher.publish_follow_event(
+                'follow_created', follower_id=1, followed_id=2, is_super_follower=False
+            )),
+            ('like_created', lambda: event_publisher.publish_like_event(
+                'like_created', user_id=1, post_id=999
+            )),
+            ('comment_created', lambda: event_publisher.publish_comment_event(
+                'comment_created', user_id=1, post_id=999, comment_id=1
+            ))
+        ]
+        
+        success_count = 0
+        for event_name, publisher_func in test_events:
+            try:
+                success = publisher_func()
+                if success:
+                    logger.info(f"✅ {event_name} event published successfully")
+                    success_count += 1
+                else:
+                    logger.warning(f"⚠️ {event_name} event publishing returned False")
+            except Exception as e:
+                logger.error(f"❌ {event_name} event publishing failed: {e}")
+        
+        # Flush all events
+        flushed = event_publisher.flush_all(timeout=10.0)
+        logger.info(f"✅ Event flush completed: {flushed}")
+        
+        logger.info(f"📊 Publisher test summary: {success_count}/{len(test_events)} events successful")
+        return success_count == len(test_events)
+        
+    except Exception as e:
+        logger.error(f"❌ Event publisher test failed: {e}")
+        return False
+
+def test_event_handlers():
+    """Test the event handler registry."""
+    logger.info("=== Testing Event Handler Registry ===")
+    
+    try:
+        from scrawl.core.messaging.events.event_handlers import event_handler_registry
+        
+        # Test different handlers
+        test_handlers = [
+            ('follow_created', lambda: event_handler_registry.handle_follow_created(1, 2)),
+            ('post_created', lambda: event_handler_registry.handle_post_created(1, 999, 'public')),
+            ('like_created', lambda: event_handler_registry.handle_like_created(1, 999)),
+        ]
+        
+        success_count = 0
+        for handler_name, handler_func in test_handlers:
+            try:
+                success = handler_func()
+                if success:
+                    logger.info(f"✅ {handler_name} handler executed successfully")
+                    success_count += 1
+                else:
+                    logger.warning(f"⚠️ {handler_name} handler returned False")
+            except Exception as e:
+                logger.error(f"❌ {handler_name} handler failed: {e}")
+        
+        # Get handler statistics
+        stats = event_handler_registry.get_handler_stats()
+        logger.info(f"📊 Handler stats: {stats.get('total_calls', 0)} calls, {stats.get('total_errors', 0)} errors")
+        
+        logger.info(f"📊 Handler test summary: {success_count}/{len(test_handlers)} handlers successful")
+        return success_count > 0
+        
+    except Exception as e:
+        logger.error(f"❌ Event handler test failed: {e}")
+        return False
+
+def test_consumer_classes():
+    """Test that consumer classes can be instantiated."""
+    logger.info("=== Testing Consumer Classes ===")
+    
+    try:
+        from scrawl.core.messaging.consumers.feed_event_consumer import FeedEventConsumer
+        from scrawl.core.messaging.consumers.general_event_consumer import GeneralEventConsumer
+        
+        # Test feed consumer instantiation
+        feed_consumer = FeedEventConsumer()
+        logger.info("✅ FeedEventConsumer instantiated successfully")
+        logger.info(f"   Topics: {feed_consumer.topics}")
+        logger.info(f"   Group ID: {feed_consumer.group_id}")
+        
+        # Test general consumer instantiation  
+        general_consumer = GeneralEventConsumer()
+        logger.info("✅ GeneralEventConsumer instantiated successfully")
+        logger.info(f"   Topics: {general_consumer.topics}")
+        logger.info(f"   Group ID: {general_consumer.group_id}")
+        
+        # Test health check capability
+        if hasattr(feed_consumer, 'perform_health_check'):
+            health = feed_consumer.perform_health_check()
+            logger.info(f"✅ Health check works: {health.get('status', 'unknown')}")
+        
+        return True
+        
+    except Exception as e:
+        logger.error(f"❌ Consumer class test failed: {e}")
+        return False
+
+def test_cache_integration():
+    """Test cache integration with new system."""
+    logger.info("=== Testing Cache Integration ===")
+    
+    try:
+        from scrawl.core.caching import cache_manager
+        
+        # Test basic cache operations using existing key patterns
+        test_value = {'test': True, 'timestamp': time.time()}
+        
+        # Use existing key pattern instead of 'test_cache'
+        cache_manager.set('user_profile', test_value, user_id=999)
+        logger.info("✅ Cache set operation successful")
+        
+        # Get cache
+        cached_value = cache_manager.get('user_profile', user_id=999)
+        if cached_value:
+            logger.info("✅ Cache get operation successful")
+            logger.info(f"   Cached data: {cached_value}")
+        else:
+            logger.warning("⚠️ Cache get returned None")
+        
+        # Clean up test data
+        cache_manager.delete('user_profile', user_id=999)
+        
+        return cached_value is not None
+        
+    except Exception as e:
+        logger.error(f"❌ Cache integration test failed: {e}")
+        return False
+
+def test_end_to_end_flow():
+    """Test complete end-to-end event flow."""
+    logger.info("=== Testing End-to-End Event Flow ===")
+    
+    try:
+        from scrawl.core.messaging import event_publisher
+        from scrawl.core.messaging.events.event_handlers import event_handler_registry
+        
+        # Step 1: Publish an event
+        logger.info("📤 Step 1: Publishing test event...")
+        success = event_publisher.publish_post_event(
+            'post_created', 
+            post_id=99999, 
+            user_id=999, 
+            privacy='public',
+            created_at=time.strftime('%Y-%m-%dT%H:%M:%S')
         )
         
-        producer.flush(timeout=10)
-        logger.info("✓ Producer test completed")
-        return True
-        
-    except Exception as e:
-        logger.error(f"✗ Producer test failed: {e}")
-        return False
-
-def test_consumer(bootstrap_servers):
-    """Test message consumption"""
-    logger.info("=== Testing Consumer ===")
-    
-    consumer_config = {
-        'bootstrap.servers': bootstrap_servers,
-        'group.id': 'diagnostic-group',
-        'auto.offset.reset': 'earliest'
-    }
-    
-    try:
-        consumer = Consumer(consumer_config)
-        test_topic = "diagnostic.test"
-        consumer.subscribe([test_topic])
-        
-        logger.info(f"Subscribed to {test_topic}, polling for messages...")
-        
-        # Poll for messages for 10 seconds
-        start_time = time.time()
-        message_count = 0
-        
-        while time.time() - start_time < 10:
-            msg = consumer.poll(timeout=1.0)
-            
-            if msg is None:
-                continue
-                
-            if msg.error():
-                if msg.error().code() == KafkaError._PARTITION_EOF:
-                    continue
-                else:
-                    logger.error(f"Consumer error: {msg.error()}")
-                    return False
-            
-            message_count += 1
-            logger.info(f"✓ Received message {message_count}: {msg.value().decode('utf-8')}")
-        
-        consumer.close()
-        
-        if message_count > 0:
-            logger.info(f"✓ Consumer test completed - received {message_count} messages")
-            return True
-        else:
-            logger.warning("⚠ Consumer test completed but no messages received")
+        if not success:
+            logger.error("❌ Event publishing failed")
             return False
-            
-    except Exception as e:
-        logger.error(f"✗ Consumer test failed: {e}")
-        return False
-
-def test_your_topics(bootstrap_servers):
-    """Test your specific topics"""
-    logger.info("=== Testing Your Application Topics ===")
-    
-    topics = ['like.events', 'follow.events', 'post.events']
-    admin_client = AdminClient({'bootstrap.servers': bootstrap_servers})
-    
-    try:
-        # Check if topics exist
-        metadata = admin_client.list_topics(timeout=10)
-        existing_topics = list(metadata.topics.keys())
         
-        for topic in topics:
-            if topic in existing_topics:
-                logger.info(f"✓ Topic {topic} exists")
-                # Get topic details
-                topic_metadata = metadata.topics[topic]
-                partitions = len(topic_metadata.partitions)
-                logger.info(f"  - Partitions: {partitions}")
-            else:
-                logger.warning(f"⚠ Topic {topic} not found")
+        logger.info("✅ Event published successfully")
         
-        # Try to create missing topics
-        missing_topics = [topic for topic in topics if topic not in existing_topics]
-        if missing_topics:
-            logger.info(f"Creating missing topics: {missing_topics}")
-            new_topics = [NewTopic(topic, num_partitions=3, replication_factor=1) for topic in missing_topics]
-            fs = admin_client.create_topics(new_topics)
-            
-            for topic, f in fs.items():
-                try:
-                    f.result(timeout=10)
-                    logger.info(f"✓ Created topic: {topic}")
-                except Exception as e:
-                    logger.error(f"✗ Failed to create topic {topic}: {e}")
+        # Step 2: Simulate event processing
+        logger.info("⚙️ Step 2: Simulating event handler processing...")
+        handler_success = event_handler_registry.handle_post_created(999, 99999, 'public')
         
-        return True
+        if handler_success:
+            logger.info("✅ Event handler processed successfully")
+        else:
+            logger.warning("⚠️ Event handler returned False")
+        
+        # Step 3: Check handler statistics
+        stats = event_handler_registry.get_handler_stats()
+        logger.info(f"📊 Handler stats after test: {stats}")
+        
+        # Flush events to make sure they're sent
+        event_publisher.flush_all(timeout=5.0)
+        logger.info("✅ Events flushed successfully")
+        
+        return success and handler_success
         
     except Exception as e:
-        logger.error(f"✗ Failed to test application topics: {e}")
+        logger.error(f"❌ End-to-end test failed: {e}")
         return False
 
-def main():
-    bootstrap_servers = os.environ.get('KAFKA_BROKER', 'drf_scrawl_kafka:9092')
-    logger.info(f"Starting Kafka diagnostics for: {bootstrap_servers}")
+def run_comprehensive_diagnostic():
+    """Run all diagnostic tests."""
+    logger.info("🚀 Starting Comprehensive Kafka Refactoring Diagnostic")
+    logger.info("=" * 60)
     
     tests = [
-        ("Connection Test", lambda: test_kafka_connection(bootstrap_servers)),
-        ("Topic Creation Test", lambda: test_topic_creation(bootstrap_servers)),
-        ("Producer Test", lambda: test_producer(bootstrap_servers)),
-        ("Consumer Test", lambda: test_consumer(bootstrap_servers)),
-        ("Application Topics Test", lambda: test_your_topics(bootstrap_servers))
+        ("Import System", test_imports),
+        ("Kafka Connection", test_kafka_connection),
+        ("Event Schema System", test_event_schema_system),
+        ("Event Publisher", test_event_publisher),
+        ("Event Handlers", test_event_handlers),
+        ("Consumer Classes", test_consumer_classes),
+        ("Cache Integration", test_cache_integration),
+        ("End-to-End Flow", test_end_to_end_flow),
     ]
     
     results = []
     for test_name, test_func in tests:
-        logger.info(f"\n{'='*50}")
+        logger.info(f"\n🔍 Running {test_name} test...")
         try:
             result = test_func()
             results.append((test_name, result))
+            status = "✅ PASS" if result else "❌ FAIL"
+            logger.info(f"{status}: {test_name}")
         except Exception as e:
-            logger.error(f"Test {test_name} crashed: {e}")
+            logger.error(f"💥 CRASH: {test_name} - {e}")
             results.append((test_name, False))
     
     # Summary
-    logger.info(f"\n{'='*50}")
-    logger.info("DIAGNOSTIC SUMMARY")
-    logger.info(f"{'='*50}")
-    
-    for test_name, result in results:
-        status = "PASS" if result else "FAIL"
-        logger.info(f"{test_name}: {status}")
+    logger.info("\n" + "=" * 60)
+    logger.info("📋 DIAGNOSTIC SUMMARY")
+    logger.info("=" * 60)
     
     passed = sum(1 for _, result in results if result)
     total = len(results)
-    logger.info(f"\nOverall: {passed}/{total} tests passed")
     
-    if passed != total:
-        logger.error("Some tests failed. Check the logs above for details.")
-        return 1
-    else:
-        logger.info("All tests passed! Your Kafka setup looks good.")
+    for test_name, result in results:
+        status = "✅ PASS" if result else "❌ FAIL"
+        logger.info(f"{status}: {test_name}")
+    
+    logger.info(f"\n📊 Overall Result: {passed}/{total} tests passed")
+    
+    if passed == total:
+        logger.info("🎉 All tests passed! Your Kafka refactoring is working perfectly!")
         return 0
+    else:
+        logger.error(f"⚠️ {total - passed} tests failed. Check the logs above for details.")
+        return 1
 
 if __name__ == "__main__":
-    sys.exit(main())
-    
-    
-  
+    sys.exit(run_comprehensive_diagnostic())

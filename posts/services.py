@@ -6,8 +6,7 @@ from follows.services import FollowService
 from users.models import User
 from users.services import UserService
 from .models import Post, PostImage, Tag, Like, Comment, Save
-from scrawl.config.kafka_config import producer, delivery_report
-import json
+from scrawl.core.messaging import event_publisher
 from scrawl.core.caching import cache_manager, invalidate
 from django.conf import settings
 
@@ -38,21 +37,14 @@ class PostService:
 
                 for image_data in post_images_data:
                     PostImage.objects.create(post=post, **image_data)
-
-                # Publish post event
-                event = {
-                    "event_type": "post.created",
-                    "post_id": post.id,
-                    "user_id": user.id,
-                    "created_at": post.created_at.isoformat(),
-                    "privacy": post.privacy
-                }
-                producer.produce(
-                    "post.events",
-                    value=json.dumps(event).encode('utf-8'),
-                    callback=delivery_report
+                    
+                event_publisher.publish_post_event(
+                    'post_created', 
+                    post_id=post.id,
+                    user_id=user.id,
+                    privacy=post.privacy,
+                    created_at=post.created_at.isoformat()
                 )
-                producer.flush()  # Ensure delivery (remove in prod)
 
                 # Invalidate caches
                 invalidate.invalidate_post_cache(post_id=post.id,user_id=user.id)
@@ -198,21 +190,14 @@ class PostService:
                     PostImage.objects.create(post=post, **image_data)
 
                 post.save()
-
-                # Publish update event
-                event = {
-                    "event_type": "post.updated",
-                    "post_id": post.id,
-                    "user_id": user.id,
-                    "created_at": post.updated_at.isoformat() if hasattr(post, 'updated_at') else post.created_at.isoformat(),
-                    "privacy": post.privacy
-                }
-                producer.produce(
-                    "post.events",
-                    value=json.dumps(event).encode('utf-8'),
-                    callback=delivery_report
+                
+                event_publisher.publish_post_event(
+                    'post_updated',
+                    post_id=post.id,
+                    user_id=user.id, 
+                    privacy=post.privacy,
+                    created_at=post.updated_at.isoformat() if hasattr(post, 'updated_at') else post.created_at.isoformat()
                 )
-                producer.flush()  # Ensure delivery (remove in prod)
 
                 # Invalidate caches
                 invalidate.invalidate_post_cache(post_id=post.id, user_id=user.id)
@@ -237,19 +222,11 @@ class PostService:
                 post_id = post.id
                 post.delete()
 
-                # Publish delete event
-                event = {
-                    "event_type": "post.deleted",
-                    "post_id": post_id,
-                    "user_id": user.id,
-                    "created_at": datetime.now().isoformat()
-                }
-                producer.produce(
-                    "post.events",
-                    value=json.dumps(event).encode('utf-8'),
-                    callback=delivery_report
+                event_publisher.publish_post_event(
+                    'post_deleted',
+                    post_id=post_id,
+                    user_id=user.id
                 )
-                producer.flush()  # Ensure delivery (remove in prod)
 
                 # Invalidate caches
                 invalidate.invalidate_post_cache(post_id=post_id, user_id=user.id)
@@ -337,19 +314,13 @@ class PostService:
                 like = Like.objects.create(user=requesting_user, post=post)
                 
                 # Publish like event
-                event = {
-                    "event_type": "like.created",
-                    "user_id": requesting_user.id,
-                    "post_id": post.id,
-                    "created_at": like.created_at.isoformat()
-                }
-                producer.produce(
-                    "like.events",
-                    value=json.dumps(event).encode('utf-8'),
-                    callback=delivery_report
+                
+                event_publisher.publish_like_event(
+                    'like_created',
+                    user_id=requesting_user.id,
+                    post_id=post.id,
+                    created_at=like.created_at.isoformat()  
                 )
-                producer.flush()  # Ensure delivery (remove in prod)
-
                 # Invalidate caches
                 invalidate.invalidate_interaction_cache(user_id=requesting_user.id,post_id=post.id, interaction_type='like')
                 print("Cache invalidated for post and like status:", post.id, requesting_user.id, flush=True)

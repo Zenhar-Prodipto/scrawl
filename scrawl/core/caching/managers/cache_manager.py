@@ -13,7 +13,7 @@ class CacheManager:
     """High-level cache management with predefined patterns and automatic key generation."""
     
     def __init__(self):
-        self.redis_client = redis_manager.client
+        # Don't initialize redis_client in __init__ - access it lazily
         
         # Cache key patterns - organized by domain
         self.key_patterns = {
@@ -71,6 +71,11 @@ class CacheManager:
             'system_health': 60,        # 1 minute
             'user_session': 3600,       # 1 hour
         }
+    
+    @property
+    def redis_client(self):
+        """Get Redis client - lazy initialization."""
+        return redis_manager.client
     
     def _generate_key(self, key_type: str, **kwargs) -> str:
         """Generate cache key from pattern and parameters."""

@@ -105,10 +105,13 @@ services:
       "
 
   # Application Consumers
+
+  # General Event Consumer
   consumer:
     build:
       context: .
       dockerfile: docker/base/Dockerfile
+    container_name: drf_scrawl_consumer
     volumes:
       - .:/app
     depends_on:
@@ -117,13 +120,21 @@ services:
     env_file:
       - .env
     entrypoint: ["/app/docker/base/entrypoint.sh"]
-    command: ["python", "-u", "/app/scrawl/consumers.py"]
+    command:
+      [
+        "python",
+        "-u",
+        "-m",
+        "scrawl.core.messaging.consumers.general_event_consumer",
+      ]
     restart: unless-stopped
 
+  # Feed Event Consumer (already updated)
   feed-consumer:
     build:
       context: .
       dockerfile: docker/base/Dockerfile
+    container_name: drf_scrawl_feed_consumer
     volumes:
       - .:/app
     depends_on:
@@ -132,7 +143,13 @@ services:
     env_file:
       - .env
     entrypoint: ["/app/docker/base/entrypoint.sh"]
-    command: ["python", "-u", "/app/scrawl/feed_consumer.py"]
+    command:
+      [
+        "python",
+        "-u",
+        "-m",
+        "scrawl.core.messaging.consumers.feed_event_consumer",
+      ]
     restart: unless-stopped
 
   # Monitoring Stack - Prometheus

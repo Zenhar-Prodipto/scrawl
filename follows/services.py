@@ -3,8 +3,7 @@ from follows.models import Follow, FollowRequest
 from users.models import User
 from django.db import DatabaseError, transaction
 from django.core.exceptions import ObjectDoesNotExist
-from scrawl.config.kafka_config import producer, delivery_report
-import json
+from scrawl.core.messaging import event_publisher
 from scrawl.core.caching import cache_manager, invalidate
 
 class FollowService:
@@ -16,21 +15,13 @@ class FollowService:
             if not created:
                 raise ValueError("You already follow this user.")
             
-            # Publish follow event
-            event = {
-                "event_type": "follow.created",
-                "follower_id": user.id,
-                "followed_id": target_user.id,
-                "created_at": follow.created_at.isoformat(),
-                "is_super_follower": follow.is_super_follower
-            }
-            producer.produce(
-                "follow.events",
-                value=json.dumps(event).encode('utf-8'),
-                callback=delivery_report
+            event_publisher.publish_follow_event(
+                'follow_created',
+                follower_id=user.id,
+                followed_id=target_user.id,
+                is_super_follower=follow.is_super_follower,
+                created_at=follow.created_at.isoformat()
             )
-            producer.flush()  # Ensure delivery for simplicity (remove in prod for async)
-            
             # Invalidate caches
             invalidate.invalidate_follow_relationship_cache(user.id, target_user.id)
 
@@ -46,23 +37,29 @@ class FollowService:
         try:
             target_user = User.objects.get(id=target_id, is_deleted=False)
             with transaction.atomic():
+                      
+                follow = Follow.objects.filter(follower=user, followed=target_user).first()
+                if not follow:
+                    raise ValueError("You are not following this user.")
+            
+                # Store the original follow data before deletion
+                original_is_super_follower = follow.is_super_follower
+                original_created_at = follow.created_at.isoformat()
+            
+                # Delete the follow relationship
                 deleted_count, _ = Follow.objects.filter(follower=user, followed=target_user).delete()
                 if deleted_count == 0:
                     raise ValueError("You are not following this user.")
-                
-                # Publish unfollow event
-                event = {
-                    "event_type": "follow.deleted",
-                    "follower_id": user.id,
-                    "followed_id": target_user.id,
-                    "created_at": datetime.now().isoformat()
-                }
-                producer.produce(
-                    "follow.events",
-                    value=json.dumps(event).encode('utf-8'),
-                    callback=delivery_report
+            
+            # Publish unfollow event 
+                event_publisher.publish_follow_event(
+                    'follow_deleted',
+                    follower_id=user.id,
+                    followed_id=target_user.id,
+                    is_super_follower=original_is_super_follower,  
+                    created_at=original_created_at  
                 )
-                producer.flush()  # Ensure delivery (remove in prod)
+                
             
             invalidate.invalidate_follow_relationship_cache(user.id, target_user.id)
             print("Cache invalidated for follower/following/status:", target_user.id, user.id, flush=True)
@@ -248,11 +245,10 @@ class FollowService:
                 raise ValueError("This request cannot be updated as it is not pending.")
 
             if new_status == 'accepted':
-                # Reuse follow_user to create the follow relationship
                 cls.follow_user(follow_request.requester, follow_request.target.id)
                 # Delete the FollowRequest
                 follow_request.delete()
-            else:  # new_status == 'denied'
+            else:  
                 follow_request.status = 'denied'
                 follow_request.save()
 

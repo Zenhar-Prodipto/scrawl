@@ -25,5 +25,6 @@ urlpatterns = [
     path('api/v1/follows/', include('follows.urls')),
     path('api/v1/posts/', include('posts.urls')),
     path('api/v1/feed/', include('feed.urls')),
+    path('api/v1/monitoring/', include('scrawl.core.monitoring.urls')),
 ] + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
 

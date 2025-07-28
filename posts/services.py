@@ -9,6 +9,7 @@ from .models import Post, PostImage, Tag, Like, Comment, Save
 from scrawl.core.messaging import event_publisher
 from scrawl.core.caching import cache_manager, invalidate
 from django.conf import settings
+from scrawl.core.monitoring.metrics.collectors import record_post_creation
 
 class PostService:
     @classmethod
@@ -30,6 +31,7 @@ class PostService:
 
             with transaction.atomic():
                 post = Post.objects.create(user=user, **validated_data)
+                record_post_creation(post.privacy, 'free')  
 
                 for tag_name in tags_data:
                     tag, _ = Tag.objects.get_or_create(name=tag_name.strip())

@@ -5,6 +5,7 @@ from django.db import DatabaseError, transaction
 from django.core.exceptions import ObjectDoesNotExist
 from scrawl.core.messaging import event_publisher
 from scrawl.core.caching import cache_manager, invalidate
+from scrawl.core.monitoring.metrics.collectors import record_follow_creation
 
 class FollowService:
     @classmethod
@@ -12,6 +13,7 @@ class FollowService:
         try:
             target_user = User.objects.get(id=target_id, is_deleted=False)
             follow, created = Follow.objects.get_or_create(follower=user, followed=target_user)
+            record_follow_creation('standard', 'free') 
             if not created:
                 raise ValueError("You already follow this user.")
             

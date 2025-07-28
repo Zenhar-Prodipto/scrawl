@@ -12,6 +12,7 @@ from users.models import User
 from datetime import datetime, timedelta
 from django.utils import timezone  
 from scrawl.core.caching import cache_manager, invalidate
+from scrawl.core.monitoring.metrics.collectors import record_feed_request
 
 logger = logging.getLogger(__name__)
 
@@ -146,6 +147,7 @@ class FeedService:
             cached_meta = cache_manager.get('user_feed', user_id=user.id)  # For metadata
 
             if cached_page and cached_meta:
+                record_feed_request('free', True) 
                 page_data = cached_page      
                 meta_data = cached_meta      
                 post_ids = [item['post_id'] for item in page_data]
@@ -161,7 +163,8 @@ class FeedService:
                     'total_pages': meta_data['total_pages'],
                     'cache_hit': True
                 }
-
+            
+            record_feed_request('free', False) 
             logger.info(f"Generating fresh feed for user {user.id}")
             feed_posts = FeedService._build_optimized_feed(user)
             total_posts = len(feed_posts)

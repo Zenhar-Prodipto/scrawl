@@ -9,6 +9,7 @@ from rest_framework import serializers
 from .serializers import UserSerializer
 from .services import UserService
 from scrawl.core.rate_limiting.utils import rate_limit_user, rate_limit_ip
+from scrawl.core.monitoring.metrics.collectors import record_user_registration
 
 
 class RegisterView(generics.CreateAPIView):
@@ -55,6 +56,8 @@ class RegisterView(generics.CreateAPIView):
 
         # Success response
         user_data = UserSerializer(user).data
+        record_user_registration('standard')
+
         return Response(
             {
                 "status": "success",

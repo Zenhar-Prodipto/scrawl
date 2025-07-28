@@ -17,6 +17,7 @@ from datetime import timedelta
 
 load_dotenv()  # This loads environment variables from the .env file
 
+
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -125,6 +126,18 @@ KAFKA = {
     'BOOTSTRAP_SERVERS': os.getenv('KAFKA_BROKER', 'drf_scrawl_kafka:9092'),
     'SECURITY_PROTOCOL': 'PLAINTEXT',
     'API_VERSION': (2, 3, 0)
+}
+
+
+# Rate Limiting Configuration
+RATE_LIMIT_MIDDLEWARE = {
+    'enabled': True,
+    'apply_ip_limits': True,
+    'apply_user_limits': True,
+    'exempt_superusers': True,
+    'fail_open': True,
+    'add_headers': True,
+    'log_violations': True,
 }
 
 

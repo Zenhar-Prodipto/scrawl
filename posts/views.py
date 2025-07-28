@@ -11,10 +11,11 @@ from .models import Post, Like, User, Comment
 from .serializers import LikeCreateSerializer
 from .serializers import PostCreateSerializer, PostDetailSerializer, PostListSerializer, PostUpdateSerializer, LikeCreateSerializer, CommentCreateSerializer, CommentUpdateSerializer
 from .paginators import PostPaginator
+from scrawl.core.rate_limiting.utils import rate_limit_user
 
 class PostCreateView(APIView):
     permission_classes = [IsAuthenticated]
-
+    @rate_limit_user('post_create')
     def post(self, request, *args, **kwargs):
         try:
             serializer = PostCreateSerializer(data=request.data, context={'request': request})
@@ -67,6 +68,7 @@ class PostCreateView(APIView):
 class PostDetailView(APIView):
     permission_classes = [IsAuthenticated]
 
+    @rate_limit_user('post_view')
     def get(self, request, post_id, *args, **kwargs):
         try:
             post = PostService.get_self_post_by_id(post_id, request.user)
@@ -106,7 +108,7 @@ class PostDetailView(APIView):
                 },
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
-            
+    @rate_limit_user('post_update') 
     def patch(self, request, post_id, *args, **kwargs):
         try:
             # Fetch the post
@@ -161,7 +163,7 @@ class PostDetailView(APIView):
                 },
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
-            
+    @rate_limit_user('post_delete')  
     def delete(self, request, post_id, *args, **kwargs):
         try:
             # Fetch the post
@@ -210,6 +212,7 @@ class PostListView(APIView):
     permission_classes = [IsAuthenticated]
     pagination_class = PostPaginator
 
+    @rate_limit_user('post_list_view')
     def get(self, request, *args, **kwargs):
         try:
             # Fetch posts
@@ -250,7 +253,7 @@ class PostListView(APIView):
             
 class LikePostView(APIView):
     permission_classes = [IsAuthenticated]
-
+    @rate_limit_user('like_post')
     def post(self, request, post_id, *args, **kwargs):
         try:
             # Validate request data
@@ -327,7 +330,7 @@ class LikePostView(APIView):
                 },
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
-            
+    @rate_limit_user('like_post')  
     def delete(self, request, post_id, *args, **kwargs):
         try:
             # Fetch the post
@@ -384,10 +387,10 @@ class LikePostView(APIView):
                 },
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
-            
+        
 class CommentPostView(APIView):
     permission_classes = [IsAuthenticated]
-
+    @rate_limit_user('comment_post')
     def post(self, request, post_id, *args, **kwargs):
         try:
             # Validate request data
@@ -465,7 +468,7 @@ class CommentPostView(APIView):
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
             
-            
+    @rate_limit_user('comment_post')   
     def patch(self, request, post_id, comment_id, *args, **kwargs):
         try:
             # Fetch the post
@@ -558,7 +561,7 @@ class CommentPostView(APIView):
                 },
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
-            
+    @rate_limit_user('comment_post')      
     def delete(self, request, post_id, comment_id, *args, **kwargs):
         try:
             # Fetch the post
@@ -654,6 +657,7 @@ class CommentPostView(APIView):
 class SavePostView(APIView):
     permission_classes = [IsAuthenticated]
 
+    @rate_limit_user('save_post')
     def post(self, request, post_id, *args, **kwargs):
         try:
             # Fetch the post
@@ -720,7 +724,7 @@ class SavePostView(APIView):
                 },
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
-
+    @rate_limit_user('save_post')
     def delete(self, request, post_id, *args, **kwargs):
         try:
             # Fetch the post
@@ -791,6 +795,7 @@ class SavedPostListView(APIView):
     permission_classes = [IsAuthenticated]
     pagination_class = PostPaginator
 
+    @rate_limit_user('saved_posts_view')
     def get(self, request, *args, **kwargs):
         try:
             # Fetch the user's saved posts
@@ -832,7 +837,7 @@ class SavedPostListView(APIView):
 class UserPostListView(APIView):
     permission_classes = [IsAuthenticated]
     pagination_class = PostPaginator
-
+    @rate_limit_user('user_posts_view')
     def get(self, request, user_id, *args, **kwargs):
         try:
             # Fetch posts for the specified user
@@ -888,7 +893,7 @@ class UserPostListView(APIView):
             
 class UserPostDetailView(APIView):
     permission_classes = [IsAuthenticated]
-
+    @rate_limit_user('user_post_view_details')
     def get(self, request, user_id, post_id, *args, **kwargs):
         try:
             # Fetch the post

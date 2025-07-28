@@ -5,13 +5,14 @@ from rest_framework import status
 from django.db import DatabaseError
 from .services import FeedService
 from posts.serializers import PostListSerializer
+from scrawl.core.rate_limiting.utils import rate_limit_user
 import logging
 
 logger = logging.getLogger(__name__)
 
 class FeedView(APIView):
     permission_classes = [IsAuthenticated]
-
+    @rate_limit_user('feed_request')
     def get(self, request, *args, **kwargs):
         try:
             page = int(request.query_params.get('page', 1))

@@ -8,11 +8,13 @@ from users.models import User
 from django.db import DatabaseError
 from .paginators import FollowPaginator
 from rest_framework import serializers
+from scrawl.core.rate_limiting.utils import rate_limit_user
 
 class FollowView(generics.GenericAPIView):
     serializer_class = FollowSerializer
     permission_classes = [IsAuthenticated]
     
+    @rate_limit_user('follow')
     def post(self, request, user_id, *args, **kwargs):
         current_user = request.user
         serializer = self.get_serializer(data={'followed': user_id})
@@ -90,7 +92,7 @@ class FollowView(generics.GenericAPIView):
                 },
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
-            
+    @rate_limit_user('follow')   
     def delete(self, request, user_id, *args, **kwargs):
         current_user = request.user
         try:
@@ -133,6 +135,7 @@ class FollowersView(generics.GenericAPIView):
     permission_classes = [IsAuthenticated]
     pagination_class = FollowPaginator
     
+    @rate_limit_user('followers_view')
     def get(self, request, user_id, *args, **kwargs):
         try:
             # Check if the target user exists and get their profile type
@@ -182,7 +185,7 @@ class FollowingView(generics.GenericAPIView):
     serializer_class = UserFollowSerializer 
     permission_classes = [IsAuthenticated]
     pagination_class = FollowPaginator
-    
+    @rate_limit_user('following_view')
     def get(self, request, user_id, *args, **kwargs):
         try:
             # Check if the target user exists and get their profile type
@@ -311,6 +314,7 @@ class SelfFollowingView(generics.ListAPIView):
 class FollowStatusView(generics.GenericAPIView):
     permission_classes = [IsAuthenticated]
     
+    @rate_limit_user('follow_status')
     def get(self, request, user_id, *args, **kwargs):
         current_user = request.user
         try:
@@ -350,7 +354,7 @@ class PendingFollowRequestsIncomingView(generics.ListAPIView):
     def get_queryset(self):
         current_user = self.request.user
         return FollowService.follow_requests_incoming(current_user)
-    
+    @rate_limit_user('pending_follow_requests_incoming')
     def list(self, request, *args, **kwargs):
         try:
             queryset = self.get_queryset()
@@ -388,7 +392,7 @@ class PendingFollowRequestsOutgoingView(generics.ListAPIView):
     def get_queryset(self):
         current_user = self.request.user
         return FollowService.follow_requests_outgoing(current_user)
-    
+    @rate_limit_user('pending_follow_requests_outgoing')
     def list(self, request, *args, **kwargs):
         try:
             queryset = self.get_queryset()
@@ -422,6 +426,7 @@ class FollowRequestUpdateView(generics.GenericAPIView):
     serializer_class = FollowRequestUpdateSerializer
     permission_classes = [IsAuthenticated]
     
+    @rate_limit_user('follow_request_update')
     def post(self, request, req_id, *args, **kwargs):
         try:
             # Validate request body
@@ -469,7 +474,7 @@ class FollowRequestUpdateView(generics.GenericAPIView):
 class FollowRequestCancelView(generics.GenericAPIView):
     serializer_class = FollowRequestCancelSerializer
     permission_classes = [IsAuthenticated]
-    
+    @rate_limit_user('follow_request_cancel')
     def post(self, request, req_id, *args, **kwargs):
         try:
             # Validate request body (status will be 'cancelled')

@@ -8,11 +8,14 @@ from .serializers import RegisterSerializer, LoginSerializer, LogoutSerializer, 
 from rest_framework import serializers
 from .serializers import UserSerializer
 from .services import UserService
+from scrawl.core.rate_limiting.utils import rate_limit_user, rate_limit_ip
+
 
 class RegisterView(generics.CreateAPIView):
     serializer_class = RegisterSerializer
     permission_classes = [AllowAny]
-
+    
+    @rate_limit_ip('register')
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         
@@ -76,7 +79,8 @@ class RegisterView(generics.CreateAPIView):
 class LoginView(generics.GenericAPIView):
     serializer_class = LoginSerializer
     permission_classes = [AllowAny]
-
+    
+    @rate_limit_ip('login') 
     def post(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         try:
@@ -126,7 +130,7 @@ class LoginView(generics.GenericAPIView):
 class LogoutView(generics.GenericAPIView):
     serializer_class = LogoutSerializer
     permission_classes = [IsAuthenticated]
-
+    @rate_limit_user('logout')
     def post(self, request, *args, **kwargs):
         print(f"LogoutView: User={request.user}, Token={request.auth}", flush=True)
         serializer = self.get_serializer(data=request.data)
@@ -152,6 +156,7 @@ class UserProfileView(generics.RetrieveUpdateDestroyAPIView):
             return None
         return user
     
+    @rate_limit_user('profile_view')   
     def get(self, request, *args, **kwargs):
         try:
             user = self.get_object()
@@ -169,7 +174,9 @@ class UserProfileView(generics.RetrieveUpdateDestroyAPIView):
                 {"status": "error", "message": f"Unexpected error: {str(e)}"},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
-            
+    
+    # Apply user-based rate limiting to profile updates        
+    @rate_limit_user('profile_update')
     def patch(self, request, *args, **kwargs):
         user = self.get_object()
         if not user:

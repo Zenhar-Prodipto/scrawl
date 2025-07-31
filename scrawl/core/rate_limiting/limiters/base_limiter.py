@@ -8,7 +8,6 @@ from typing import Dict, Any, Optional, Tuple
 from django.http import HttpRequest
 # Import backend lazily to avoid circular imports
 from ..utils.exceptions import RateLimitExceeded, RateLimitConfigurationError
-from ...monitoring.metrics.collectors import record_rate_limit_violation, record_rate_limit_request
 
 logger = logging.getLogger(__name__)
 
@@ -105,12 +104,16 @@ class BaseRateLimiter(ABC):
             # Check rate limit using specified algorithm
             result = self._check_rate_limit(key, limit, window, config)
             is_allowed, metadata = result
-            record_rate_limit_request(
-            limiter_type=self.__class__.__name__,
-            user_tier='unknown',  # We'll enhance this later
-            action='unknown',     # We'll enhance this later
-            allowed=is_allowed
-            )
+            try:
+                from ...monitoring.metrics.collectors import record_rate_limit_request
+                record_rate_limit_request(
+                    limiter_type=self.__class__.__name__,
+                    user_tier='unknown',
+                    action='unknown',
+                    allowed=is_allowed
+                )
+            except ImportError:
+                pass  
             return result
             
         except Exception as e:
@@ -170,12 +173,16 @@ class BaseRateLimiter(ABC):
         """
         exception_class = self.get_exception_class()
         
-        record_rate_limit_violation(
-        limiter_type=self.__class__.__name__,
-        user_tier='unknown',  # We'll enhance this later
-        action='unknown',     # We'll enhance this later  
-        algorithm=metadata.get('algorithm', self.algorithm)
-        )
+        try:
+            from ...monitoring.metrics.collectors import record_rate_limit_violation
+            record_rate_limit_violation(
+                limiter_type=self.__class__.__name__,
+                user_tier='unknown',
+                action='unknown',
+                algorithm=metadata.get('algorithm', self.algorithm)
+            )
+        except ImportError:
+            pass  #
         
         # Calculate wait time from metadata, Ensure it's a number
         wait_time = None

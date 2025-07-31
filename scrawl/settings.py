@@ -63,6 +63,8 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    'scrawl.core.monitoring.middleware.APIMetricsMiddleware',
+ 
 ]
 
 ROOT_URLCONF = 'scrawl.urls'
@@ -138,6 +140,27 @@ RATE_LIMIT_MIDDLEWARE = {
     'fail_open': True,
     'add_headers': True,
     'log_violations': True,
+}
+
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'handlers': {
+        'console': {
+            'class': 'logging.StreamHandler',
+        },
+        'api_metrics': {
+            'class': 'logging.FileHandler',
+            'filename': 'api_metrics.log',
+        },
+    },
+    'loggers': {
+        'scrawl.api_metrics': {
+            'handlers': ['console', 'api_metrics'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+    },
 }
 
 

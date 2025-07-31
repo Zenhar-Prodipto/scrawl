@@ -3,6 +3,7 @@ from .models import User, Interest
 from follows.models import Follow, FollowRequest
 from django.db import DatabaseError, transaction
 from django.utils import timezone
+from scrawl.core.monitoring.metrics.collectors import record_authentication_event
 
 class UserService:
     @classmethod

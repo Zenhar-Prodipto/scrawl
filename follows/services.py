@@ -13,9 +13,11 @@ class FollowService:
         try:
             target_user = User.objects.get(id=target_id, is_deleted=False)
             follow, created = Follow.objects.get_or_create(follower=user, followed=target_user)
-            record_follow_creation('standard', 'free') 
             if not created:
                 raise ValueError("You already follow this user.")
+            
+            record_follow_creation('standard', 'free') 
+
             
             event_publisher.publish_follow_event(
                 'follow_created',

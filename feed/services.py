@@ -12,7 +12,8 @@ from users.models import User
 from datetime import datetime, timedelta
 from django.utils import timezone  
 from scrawl.core.caching import cache_manager, invalidate
-from scrawl.core.monitoring.metrics.collectors import record_feed_request
+from scrawl.core.monitoring.metrics.collectors import record_feed_request, record_feed_operation,record_feed_generation_time
+import time
 
 logger = logging.getLogger(__name__)
 
@@ -143,11 +144,16 @@ class FeedService:
     @staticmethod
     def get_user_feed(user: User, page: int = 1) -> Dict[str, Any]:
         try:
+            start_time = time.time()
             cached_page = cache_manager.get('feed_page', user_id=user.id, page=page)
             cached_meta = cache_manager.get('user_feed', user_id=user.id)  # For metadata
 
             if cached_page and cached_meta:
                 record_feed_request('free', True) 
+                record_feed_operation('cache_hit', True, 'free')
+                duration = time.time() - start_time
+                record_feed_generation_time(duration, 'free', True)
+
                 page_data = cached_page      
                 meta_data = cached_meta      
                 post_ids = [item['post_id'] for item in page_data]
@@ -165,6 +171,8 @@ class FeedService:
                 }
             
             record_feed_request('free', False) 
+            record_feed_operation('cache_miss', True, 'free')
+
             logger.info(f"Generating fresh feed for user {user.id}")
             feed_posts = FeedService._build_optimized_feed(user)
             total_posts = len(feed_posts)
@@ -186,6 +194,9 @@ class FeedService:
             start_idx = (page - 1) * FEED_PAGE_SIZE
             end_idx = start_idx + FEED_PAGE_SIZE
             page_posts = feed_posts[start_idx:end_idx]
+            
+            duration = time.time() - start_time
+            record_feed_generation_time(duration, 'free', False)
 
             return {
                 'posts': page_posts,

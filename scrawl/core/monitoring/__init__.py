@@ -38,6 +38,7 @@ from .health import (
 
 # Import views for URL routing
 from .views import MetricsView, HealthView
+# from .middleware import APIMetricsMiddleware
 
 __all__ = [
     # Metrics
@@ -60,6 +61,9 @@ __all__ = [
     # Views
     'MetricsView',
     'HealthView',
+    
+    # Middleware
+    # 'APIMetricsMiddleware',
 ]
 
 __version__ = '1.0.0'

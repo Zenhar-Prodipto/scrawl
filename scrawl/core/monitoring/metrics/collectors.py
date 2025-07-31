@@ -80,7 +80,7 @@ kafka_publish_duration = Histogram(
 )
 
 # =============================================================================
-# BUSINESS METRICS (Phase 2)
+# BUSINESS METRICS 
 # =============================================================================
 
 user_registrations = Counter(
@@ -204,7 +204,7 @@ def update_system_health(component: str, healthy: bool):
     system_health.labels(component=component).set(status)
 
 # =============================================================================
-# BUSINESS METRIC HELPERS (Phase 2)
+# BUSINESS METRIC HELPERS 
 # =============================================================================
 
 def record_user_registration(registration_type: str = 'standard'):
@@ -228,5 +228,77 @@ def record_authentication_event(event_type: str, success: bool):
     """Record an authentication event."""
     result = 'success' if success else 'failure'
     authentication_events.labels(event_type=event_type, result=result).inc()
+    
+# =============================================================================
+# POST INTERACTION METRICS 
+# =============================================================================
+
+post_interactions = Counter(
+    'scrawl_post_interactions_total',
+    'Total post interactions (likes, comments, saves)',
+    ['interaction_type', 'action', 'post_privacy', 'user_tier']
+)
+
+def record_post_interaction(interaction_type: str, action: str, post_privacy: str = 'public', user_tier: str = 'free'):
+    """Record post interaction events."""
+    post_interactions.labels(
+        interaction_type=interaction_type,
+        action=action,
+        post_privacy=post_privacy,
+        user_tier=user_tier
+    ).inc()
+    
+# =============================================================================
+# FOLLOW INTERACTION METRICS 
+# =============================================================================
+
+follow_interactions = Counter(
+    'scrawl_follow_interactions_total',
+    'Total follow interactions (follow, unfollow, requests)',
+    ['interaction_type', 'action', 'user_tier']
+)
+
+def record_follow_interaction(interaction_type: str, action: str, user_tier: str = 'free'):
+    """Record follow interaction events."""
+    follow_interactions.labels(
+        interaction_type=interaction_type,
+        action=action,
+        user_tier=user_tier
+    ).inc()
+    
+    
+# =============================================================================
+# ENHANCED FEED METRICS 
+# =============================================================================
+
+feed_operations = Counter(
+    'scrawl_feed_operations_total',
+    'Total feed operations and performance',
+    ['operation_type', 'result', 'user_tier']
+)
+
+feed_generation_duration = Histogram(
+    'scrawl_feed_generation_duration_seconds',
+    'Time taken to generate feeds',
+    ['user_tier', 'cache_result'],
+    buckets=(0.1, 0.25, 0.5, 1.0, 2.0, 5.0, 10.0, 30.0)
+)
+
+def record_feed_operation(operation_type: str, success: bool, user_tier: str = 'free'):
+    """Record feed operations."""
+    result = 'success' if success else 'failure'
+    feed_operations.labels(
+        operation_type=operation_type,
+        result=result,
+        user_tier=user_tier
+    ).inc()
+
+def record_feed_generation_time(duration: float, user_tier: str = 'free', cache_hit: bool = False):
+    """Record feed generation timing."""
+    cache_result = 'hit' if cache_hit else 'miss'
+    feed_generation_duration.labels(
+        user_tier=user_tier,
+        cache_result=cache_result
+    ).observe(duration)
 
 logger.info("Scrawl metrics collectors initialized successfully")

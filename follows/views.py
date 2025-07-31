@@ -9,6 +9,7 @@ from django.db import DatabaseError
 from .paginators import FollowPaginator
 from rest_framework import serializers
 from scrawl.core.rate_limiting.utils import rate_limit_user
+from scrawl.core.monitoring.metrics.collectors import record_follow_interaction
 
 class FollowView(generics.GenericAPIView):
     serializer_class = FollowSerializer
@@ -25,6 +26,7 @@ class FollowView(generics.GenericAPIView):
             if target_user.profile_type == 'private':
                 follow_status = FollowService.check_follow_status(current_user, user_id)
                 if follow_status:
+                    record_follow_interaction('follow', 'Bad Request', 'free')
                     return Response(
                         {"status": "error", "message": "you are already following this user"},
                         status=status.HTTP_400_BAD_REQUEST
@@ -32,6 +34,7 @@ class FollowView(generics.GenericAPIView):
                 # check if current user has already sent a follow request
                 follow_requests_exists = FollowService.does_follow_request_exist(current_user, user_id)
                 if follow_requests_exists:
+                    record_follow_interaction('follow', 'bad request', 'free')
                     return Response(
                         {"status": "error", "message": "You have already sent a follow request to this user"},
                         status=status.HTTP_400_BAD_REQUEST
@@ -39,6 +42,7 @@ class FollowView(generics.GenericAPIView):
                 
                 #create a follow request
                 FollowService.create_follow_request(current_user, user_id)
+                record_follow_interaction('follow_request', 'create', 'free')
                 
                 return Response(
                     {
@@ -50,6 +54,7 @@ class FollowView(generics.GenericAPIView):
                 )
             
             follow = FollowService.follow_user(current_user, user_id)
+            record_follow_interaction('follow', 'create', 'free')
             target_user = User.objects.get(id=user_id, is_deleted=False)
             target_data = UserFollowSerializer(target_user).data
             return Response(
@@ -61,6 +66,7 @@ class FollowView(generics.GenericAPIView):
                 status=status.HTTP_201_CREATED
             )
         except serializers.ValidationError as e:
+            record_follow_interaction('follow', 'validation_failed', 'free')
             return Response(
                 {
                     "status": "error",
@@ -70,21 +76,25 @@ class FollowView(generics.GenericAPIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
         except User.DoesNotExist:
+            record_follow_interaction('follow', 'user_not_found', 'free')
             return Response(
                 {"status": "error", "message": "Target user not found"},
                 status=status.HTTP_404_NOT_FOUND
             )
         except ValueError as e:
+            record_follow_interaction('follow', 'business_logic_failed', 'free')
             return Response(
                 {"status": "error", "message": str(e)},
                 status=status.HTTP_400_BAD_REQUEST
             )
         except DatabaseError:
+            record_follow_interaction('follow', 'database_error', 'free')
             return Response(
                 {"status": "error", "message": "Database error occurred"},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
         except Exception as e:
+            record_follow_interaction('follow', 'unexpected_error', 'free')
             return Response(
                 {
                     "status": "error",
@@ -98,6 +108,7 @@ class FollowView(generics.GenericAPIView):
         try:
             follow_status = FollowService.check_follow_status(current_user, user_id)
             if not follow_status:
+                record_follow_interaction('follow', 'unfollow_user_not_found', 'free')
                 return Response(
                     {"status": "error", "message": "You are not following this user"},
                     status=status.HTTP_400_BAD_REQUEST
@@ -105,6 +116,7 @@ class FollowView(generics.GenericAPIView):
             # Get target user before unfollowing for response
             target_user = UserService.get_user_by_id(user_id)
             FollowService.unfollow_user(current_user, user_id)
+            record_follow_interaction('follow', 'delete', 'free')
             target_data = UserFollowSerializer(target_user).data 
             return Response(
                 {
@@ -115,16 +127,19 @@ class FollowView(generics.GenericAPIView):
                 status=status.HTTP_200_OK 
             )
         except User.DoesNotExist:
+            record_follow_interaction('follow', 'unfollow_user_not_found', 'free')
             return Response(
                 {"status": "error", "message": "Target user not found"},
                 status=status.HTTP_404_NOT_FOUND
             )
         except ValueError as e:
+            record_follow_interaction('follow', 'unfollow_failed', 'free')
             return Response(
                 {"status": "error", "message": str(e)},
                 status=status.HTTP_400_BAD_REQUEST
             )
         except DatabaseError:
+            record_follow_interaction('follow', 'dunfollow_database_failed', 'free')
             return Response(
                 {"status": "error", "message": "Database error occurred"},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
@@ -440,9 +455,11 @@ class FollowRequestUpdateView(generics.GenericAPIView):
 
             # Return appropriate success message
             if new_status == 'accepted':
+                record_follow_interaction('follow_request', 'accepted', 'free')
                 message = "Follow request accepted successfully"
             else:  # denied
                 message = "Follow request denied successfully"
+                record_follow_interaction('follow_request', 'denied', 'free')
 
             return Response(
                 {
@@ -483,6 +500,7 @@ class FollowRequestCancelView(generics.GenericAPIView):
             current_user = request.user
             # Update the follow request
             FollowService.cancel_follow_request(current_user, req_id)
+            record_follow_interaction('follow_request', 'cancelled', 'free')
 
             return Response(
                 {

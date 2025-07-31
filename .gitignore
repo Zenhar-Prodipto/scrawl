@@ -13,4 +13,8 @@ project-related-stuff.txt
 # Ignores the data inside media directory
 media/
 
+api_metrics.log
+*.log
+
+
 temp/ 

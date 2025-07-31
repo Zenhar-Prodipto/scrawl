@@ -9,6 +9,9 @@ from rest_framework import serializers
 from .serializers import UserSerializer
 from .services import UserService
 from scrawl.core.rate_limiting.utils import rate_limit_user, rate_limit_ip
+from scrawl.core.monitoring.metrics.collectors import record_user_registration,record_authentication_event
+
+
 
 
 class RegisterView(generics.CreateAPIView):
@@ -23,6 +26,8 @@ class RegisterView(generics.CreateAPIView):
         try:
             serializer.is_valid(raise_exception=True)
         except serializers.ValidationError as e:
+            record_authentication_event('registration', False)
+
             return Response(
                 {
                     "status": "error",
@@ -37,6 +42,7 @@ class RegisterView(generics.CreateAPIView):
             user = serializer.save()  # Calls create_user in service via serializer
             refresh = RefreshToken.for_user(user)  # Generate JWT
         except DatabaseError:
+            record_authentication_event('registration', False)
             return Response(
                 {
                     "status": "error",
@@ -45,6 +51,8 @@ class RegisterView(generics.CreateAPIView):
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
         except Exception as e:  # Catch token generation or other surprises
+            record_authentication_event('registration', False)
+
             return Response(
                 {
                     "status": "error",
@@ -55,6 +63,10 @@ class RegisterView(generics.CreateAPIView):
 
         # Success response
         user_data = UserSerializer(user).data
+        record_user_registration('standard')
+        record_authentication_event('registration', True)
+
+
         return Response(
             {
                 "status": "success",
@@ -86,6 +98,7 @@ class LoginView(generics.GenericAPIView):
         try:
             serializer.is_valid(raise_exception=True)
         except serializers.ValidationError as e:
+            record_authentication_event('login', False)
             return Response(
                 {"status": "error", "message": "Validation failed", "errors": e.detail},
                 status=status.HTTP_400_BAD_REQUEST
@@ -95,12 +108,14 @@ class LoginView(generics.GenericAPIView):
             is_password_correct = UserService.match_password(user, serializer.validated_data['password'])
             
             if not user or not is_password_correct or user.is_deleted:
+                record_authentication_event('login', False)
                 return Response(
                     {"status": "error", "message": "Invalid credentials"},
                     status=status.HTTP_401_UNAUTHORIZED
                 )
             refresh = RefreshToken.for_user(user)
             user_data = UserSerializer(user).data
+            record_authentication_event('login', True)
             return Response({
                 "status": "success",
                 "message": "User logged in successfully",
@@ -117,11 +132,13 @@ class LoginView(generics.GenericAPIView):
                 }
             }, status=status.HTTP_200_OK)
         except DatabaseError:
+            record_authentication_event('login', False)
             return Response(
                 {"status": "error", "message": "Database error occurred"},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
         except Exception as e:
+            record_authentication_event('login', False)
             return Response(
                 {"status": "error", "message": f"Unexpected error: {str(e)}"},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
@@ -137,10 +154,14 @@ class LogoutView(generics.GenericAPIView):
         try:
             serializer.is_valid(raise_exception=True)
         except serializers.ValidationError as e:
+            record_authentication_event('logout', False)
+
             return Response(
                 {"status": "error", "message": "Validation failed", "errors": e.detail},
                 status=status.HTTP_400_BAD_REQUEST
             )
+        record_authentication_event('logout', True)
+
         return Response(
             {"status": "success", "message": "Logged out successfully"},
             status=status.HTTP_200_OK
@@ -165,6 +186,7 @@ class UserProfileView(generics.RetrieveUpdateDestroyAPIView):
                                 status=status.HTTP_404_NOT_FOUND)
             serializer = self.get_serializer(user)
             user_data = serializer.data
+
             return Response(
                 {"status": "success", "message": "Here is your user profile", "data": user_data},
                 status=status.HTTP_200_OK
@@ -188,7 +210,7 @@ class UserProfileView(generics.RetrieveUpdateDestroyAPIView):
             serializer.is_valid(raise_exception=True)
             updated_user = serializer.save()
             updated_user_data = UserSerializer(updated_user).data
-            
+
             return Response(
                 {"status": "success", "message": "Here is your user profile", "data": updated_user_data},
                 status=status.HTTP_200_OK
@@ -225,6 +247,7 @@ class UserProfileView(generics.RetrieveUpdateDestroyAPIView):
         
         try:
             updated_user = UserService.soft_delete_user(user)
+            record_authentication_event('account_deletion', True)
             updated_user_data = UserSerializer(updated_user).data
             return Response(
                 {"status": "success", "message": "Here is your user profile", "data": updated_user_data},

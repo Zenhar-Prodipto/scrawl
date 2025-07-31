@@ -102,7 +102,19 @@ class BaseRateLimiter(ABC):
                 return True, {}
             
             # Check rate limit using specified algorithm
-            return self._check_rate_limit(key, limit, window, config)
+            result = self._check_rate_limit(key, limit, window, config)
+            is_allowed, metadata = result
+            try:
+                from ...monitoring.metrics.collectors import record_rate_limit_request
+                record_rate_limit_request(
+                    limiter_type=self.__class__.__name__,
+                    user_tier='unknown',
+                    action='unknown',
+                    allowed=is_allowed
+                )
+            except ImportError:
+                pass  
+            return result
             
         except Exception as e:
             logger.error(f"Rate limit check error: {e}")
@@ -160,6 +172,17 @@ class BaseRateLimiter(ABC):
             metadata: Rate limit metadata from backend
         """
         exception_class = self.get_exception_class()
+        
+        try:
+            from ...monitoring.metrics.collectors import record_rate_limit_violation
+            record_rate_limit_violation(
+                limiter_type=self.__class__.__name__,
+                user_tier='unknown',
+                action='unknown',
+                algorithm=metadata.get('algorithm', self.algorithm)
+            )
+        except ImportError:
+            pass  #
         
         # Calculate wait time from metadata, Ensure it's a number
         wait_time = None

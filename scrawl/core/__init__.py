@@ -82,7 +82,7 @@ from .caching import (
 )
 
 # Import messaging functionality
-from .messaging import event_publisher
+# from .messaging import event_publisher
 
 # Import rate limiting functionality
 from .rate_limiting import (
@@ -114,7 +114,7 @@ __all__ = [
     'CacheInvalidationStrategy',
     
     # Messaging
-    'event_publisher',
+    # 'event_publisher',
     
     # Rate Limiting - Decorators
     'rate_limit_user',
@@ -136,4 +136,4 @@ __all__ = [
     'get_rate_limit_status',
 ]
 
-__version__ = '2.0.0'  # Major version bump - you added 2 major systems!
+__version__ = '2.0.0' 

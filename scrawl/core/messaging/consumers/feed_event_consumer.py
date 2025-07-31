@@ -9,6 +9,8 @@ import sys
 import django
 from typing import Dict, Any, Optional
 from confluent_kafka import Message
+from ...monitoring.metrics.collectors import record_kafka_consume
+
 
 # Django setup for standalone consumer
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../../../..')))
@@ -100,8 +102,10 @@ class FeedEventConsumer(HealthMonitorMixin, BaseConsumer):
             
             if success:
                 logger.debug(f"Successfully processed {event_type} event")
+                record_kafka_consume(message.topic(), event_type, True)
             else:
                 logger.warning(f"Failed to process {event_type} event")
+                record_kafka_consume(message.topic(), event_type, False)
             
             return success
             

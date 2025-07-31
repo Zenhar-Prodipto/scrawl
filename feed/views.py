@@ -6,6 +6,8 @@ from django.db import DatabaseError
 from .services import FeedService
 from posts.serializers import PostListSerializer
 from scrawl.core.rate_limiting.utils import rate_limit_user
+from scrawl.core.monitoring.metrics.collectors import record_feed_operation
+
 import logging
 
 logger = logging.getLogger(__name__)
@@ -65,11 +67,14 @@ class FeedView(APIView):
             return response
 
         except ValueError as e:
+            record_feed_operation('validation_error', False, 'free')
             logger.warning(f"Invalid params for user {request.user.id}: {e}")
             return Response({"status": "error", "message": "Invalid request parameters", "errors": {"detail": str(e)}}, status=status.HTTP_400_BAD_REQUEST)
         except DatabaseError as e:
+            record_feed_operation('Feed_DB_error', False, 'free')
             logger.error(f"Database error for user {request.user.id}: {e}")
             return Response({"status": "error", "message": "Database error", "errors": {"detail": "Unable to retrieve feed"}}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         except Exception as e:
+            record_feed_operation('Feed_unexpected_error', False, 'free')
             logger.error(f"Unexpected error for user {request.user.id}: {e}", exc_info=True)
             return Response({"status": "error", "message": "Unexpected error", "errors": {"detail": str(e)}}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

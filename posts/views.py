@@ -12,6 +12,7 @@ from .serializers import LikeCreateSerializer
 from .serializers import PostCreateSerializer, PostDetailSerializer, PostListSerializer, PostUpdateSerializer, LikeCreateSerializer, CommentCreateSerializer, CommentUpdateSerializer
 from .paginators import PostPaginator
 from scrawl.core.rate_limiting.utils import rate_limit_user
+from scrawl.core.monitoring.metrics.collectors import record_post_interaction
 
 class PostCreateView(APIView):
     permission_classes = [IsAuthenticated]
@@ -29,6 +30,7 @@ class PostCreateView(APIView):
                     },
                     status=status.HTTP_201_CREATED
                 )
+            record_post_interaction('post', 'create_validation_failed', 'unknown', 'free')
             return Response(
                 {
                     "status": "error",
@@ -38,6 +40,7 @@ class PostCreateView(APIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
         except ValueError as e:
+            record_post_interaction('post', 'create_business_error', 'unknown', 'free')
             return Response(
                 {
                     "status": "error",
@@ -47,6 +50,8 @@ class PostCreateView(APIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
         except DatabaseError as e:
+            record_post_interaction('post', 'database_error', 'unknown', 'free')
+
             return Response(
                 {
                     "status": "error",
@@ -56,6 +61,8 @@ class PostCreateView(APIView):
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
         except Exception as e:
+            record_post_interaction('post', 'unexpected_error', 'unknown', 'free')
+
             return Response(
                 {
                     "status": "error",
@@ -118,6 +125,7 @@ class PostDetailView(APIView):
             serializer = PostUpdateSerializer(post, data=request.data, context={'request': request}, partial=True)
             if serializer.is_valid():
                 updated_post = serializer.save(user=request.user)
+                record_post_interaction('post', 'update', updated_post.privacy, 'free')
                 # Serialize the updated post for response
                 response_serializer = PostDetailSerializer(updated_post, context={'request': request})
                 return Response(
@@ -128,6 +136,7 @@ class PostDetailView(APIView):
                     },
                     status=status.HTTP_200_OK
                 )
+            record_post_interaction('post', 'update_validation_failed', 'unknown', 'free')
             return Response(
                 {
                     "status": "error",
@@ -137,6 +146,7 @@ class PostDetailView(APIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
         except ObjectDoesNotExist as e:
+            record_post_interaction('post', 'update_business_error', 'unknown', 'free')
             return Response(
                 {
                     "status": "error",
@@ -146,6 +156,7 @@ class PostDetailView(APIView):
                 status=status.HTTP_404_NOT_FOUND
             )
         except DatabaseError as e:
+            record_post_interaction('post', 'update_database_error', 'unknown', 'free')
             return Response(
                 {
                     "status": "error",
@@ -155,6 +166,7 @@ class PostDetailView(APIView):
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
         except Exception as e:
+            record_post_interaction('post', 'update_unexpected_error', 'unknown', 'free') 
             return Response(
                 {
                     "status": "error",
@@ -168,9 +180,11 @@ class PostDetailView(APIView):
         try:
             # Fetch the post
             post = PostService.get_self_post_by_id(post_id, request.user)
+            post_privacy = post.privacy
             
             # Delete the post (cascades to related objects)
             post.delete()
+            record_post_interaction('post', 'delete', post_privacy, 'free')
             
             return Response(
                 {
@@ -181,6 +195,7 @@ class PostDetailView(APIView):
                 status=status.HTTP_200_OK
             )
         except ObjectDoesNotExist as e:
+            record_post_interaction('post', 'delete_business_error', 'unknown', 'free') 
             return Response(
                 {
                     "status": "error",
@@ -190,6 +205,7 @@ class PostDetailView(APIView):
                 status=status.HTTP_404_NOT_FOUND
             )
         except DatabaseError as e:
+            record_post_interaction('post', 'delete_database_error', 'unknown', 'free') 
             return Response(
                 {
                     "status": "error",
@@ -199,6 +215,7 @@ class PostDetailView(APIView):
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
         except Exception as e:
+            record_post_interaction('post', 'delete_unexpected_error', 'unknown', 'free') 
             return Response(
                 {
                     "status": "error",
@@ -273,6 +290,7 @@ class LikePostView(APIView):
             
             # Check eligibility to like the post
             if not PostService.check_like_eligibility(request.user, post):
+                record_post_interaction('like', 'Not_eligible', 'unknown', 'free')
                 return Response(
                     {
                         "status": "error",
@@ -284,6 +302,7 @@ class LikePostView(APIView):
 
             # Create the like
             like = PostService.create_like(request.user, post)
+            record_post_interaction('like', 'create', post.privacy, 'free')
 
             return Response(
                 {
@@ -295,6 +314,7 @@ class LikePostView(APIView):
             )
 
         except Post.DoesNotExist:
+            record_post_interaction('like', 'post_not_found', 'unknown', 'free')
             return Response(
                 {
                     "status": "error",
@@ -304,6 +324,7 @@ class LikePostView(APIView):
                 status=status.HTTP_404_NOT_FOUND
             )
         except User.DoesNotExist as e:
+            record_post_interaction('like', 'user_not_found', 'unknown', 'free')
             return Response(
                 {
                     "status": "error",
@@ -313,6 +334,7 @@ class LikePostView(APIView):
                 status=status.HTTP_404_NOT_FOUND
             )
         except DatabaseError as e:
+            record_post_interaction('like', 'Database_error', 'unknown', 'free')
             return Response(
                 {
                     "status": "error",
@@ -322,6 +344,7 @@ class LikePostView(APIView):
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
         except Exception as e:
+            record_post_interaction('like', 'Database_error', 'unknown', 'free')
             return Response(
                 {
                     "status": "error",
@@ -350,6 +373,8 @@ class LikePostView(APIView):
 
             # Delete the like
             PostService.delete_like(request.user, post)
+            record_post_interaction('like', 'delete', post.privacy, 'free')
+
 
             return Response(
                 {
@@ -361,6 +386,7 @@ class LikePostView(APIView):
             )
 
         except Post.DoesNotExist:
+            record_post_interaction('like', 'post_not_found', 'unknown', 'free')
             return Response(
                 {
                     "status": "error",
@@ -370,6 +396,7 @@ class LikePostView(APIView):
                 status=status.HTTP_404_NOT_FOUND
             )
         except DatabaseError as e:
+            record_post_interaction('like', 'Database_error', 'unknown', 'free')
             return Response(
                 {
                     "status": "error",
@@ -396,6 +423,7 @@ class CommentPostView(APIView):
             # Validate request data
             serializer = CommentCreateSerializer(data=request.data)
             if not serializer.is_valid():
+                record_post_interaction('comment', 'create_validation_fail', post.privacy, 'free')
                 return Response(
                     {
                         "status": "error",
@@ -410,6 +438,7 @@ class CommentPostView(APIView):
             
             # Check eligibility to comment on the post
             if not PostService.check_comment_eligibility(request.user, post):
+                record_post_interaction('comment', 'create_not_eligible', post.privacy, 'free')
                 return Response(
                     {
                         "status": "error",
@@ -421,6 +450,7 @@ class CommentPostView(APIView):
 
             # Create the comment
             comment = PostService.create_comment(request.user, post, serializer.validated_data['text'])
+            record_post_interaction('comment', 'create', post.privacy, 'free')
 
             return Response(
                 {
@@ -432,6 +462,7 @@ class CommentPostView(APIView):
             )
 
         except Post.DoesNotExist:
+            record_post_interaction('comment', 'post_not_found', post.privacy, 'free')
             return Response(
                 {
                     "status": "error",
@@ -441,6 +472,7 @@ class CommentPostView(APIView):
                 status=status.HTTP_404_NOT_FOUND
             )
         except User.DoesNotExist as e:
+            record_post_interaction('comment', 'user_not_found', post.privacy, 'free')
             return Response(
                 {
                     "status": "error",
@@ -450,6 +482,7 @@ class CommentPostView(APIView):
                 status=status.HTTP_404_NOT_FOUND
             )
         except DatabaseError as e:
+            record_post_interaction('comment', 'database_error', post.privacy, 'free')
             return Response(
                 {
                     "status": "error",
@@ -459,6 +492,7 @@ class CommentPostView(APIView):
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
         except Exception as e:
+            record_post_interaction('comment', 'unexpected_error', post.privacy, 'free')
             return Response(
                 {
                     "status": "error",
@@ -481,6 +515,7 @@ class CommentPostView(APIView):
             
             # Check if the requesting user is the comment creator
             if request.user != comment.user:
+                record_post_interaction('comment', 'update_not_owner', post.privacy, 'free')
                 return Response(
                     {
                         "status": "error",
@@ -492,6 +527,7 @@ class CommentPostView(APIView):
             
             # Check eligibility to interact with the post
             if not PostService.check_comment_eligibility(request.user, post):
+                record_post_interaction('comment', 'update_not_eligible', post.privacy, 'free')
                 return Response(
                     {
                         "status": "error",
@@ -504,6 +540,7 @@ class CommentPostView(APIView):
             # Validate update data
             serializer = CommentUpdateSerializer(data=request.data, partial=True)
             if not serializer.is_valid():
+                record_post_interaction('comment', 'update_validation_failed', post.privacy, 'free')
                 return Response(
                     {
                         "status": "error",
@@ -515,6 +552,8 @@ class CommentPostView(APIView):
 
             # Update the comment
             updated_comment = PostService.update_comment(comment, serializer.validated_data.get('text', comment.text))
+            record_post_interaction('comment', 'update', post.privacy, 'free')
+
 
             return Response(
                 {
@@ -526,6 +565,7 @@ class CommentPostView(APIView):
             )
 
         except Comment.DoesNotExist:
+            record_post_interaction('comment', 'comment_not_found', post.privacy, 'free')
             return Response(
                 {
                     "status": "error",
@@ -535,6 +575,7 @@ class CommentPostView(APIView):
                 status=status.HTTP_404_NOT_FOUND
             )
         except Post.DoesNotExist:
+            record_post_interaction('comment', 'post_not_found', post.privacy, 'free')
             return Response(
                 {
                     "status": "error",
@@ -544,6 +585,7 @@ class CommentPostView(APIView):
                 status=status.HTTP_404_NOT_FOUND
             )
         except DatabaseError as e:
+            record_post_interaction('comment', 'database_error', post.privacy, 'free')
             return Response(
                 {
                     "status": "error",
@@ -553,6 +595,7 @@ class CommentPostView(APIView):
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
         except Exception as e:
+            record_post_interaction('comment', 'unexpected_error', post.privacy, 'free')
             return Response(
                 {
                     "status": "error",
@@ -573,6 +616,7 @@ class CommentPostView(APIView):
             # Check if the requesting user is the post owner (can delete any comment)
             if request.user == post.user:
                 PostService.delete_comment(comment)
+                record_post_interaction('comment', 'delete', post.privacy, 'free')
                 return Response(
                     {
                         "status": "success",
@@ -589,6 +633,7 @@ class CommentPostView(APIView):
             if request.user == comment.user:
                 # Check eligibility for non-owners
                 if not PostService.check_comment_eligibility(request.user, post):
+                    record_post_interaction('comment', 'delete_not_eligible', post.privacy, 'free')
                     return Response(
                         {
                             "status": "error",
@@ -598,6 +643,7 @@ class CommentPostView(APIView):
                         status=status.HTTP_403_FORBIDDEN
                     )
                 PostService.delete_comment(comment)
+                record_post_interaction('comment', 'delete', post.privacy, 'free')
                 return Response(
                     {
                         "status": "success",
@@ -608,6 +654,7 @@ class CommentPostView(APIView):
                 )
 
             # If neither post owner nor comment creator, deny access
+            record_post_interaction('comment', 'delete_not_authorized', post.privacy, 'free')
             return Response(
                 {
                     "status": "error",
@@ -618,6 +665,7 @@ class CommentPostView(APIView):
             )
 
         except Comment.DoesNotExist:
+            record_post_interaction('comment', 'comment_not_found', post.privacy, 'free')
             return Response(
                 {
                     "status": "error",
@@ -627,6 +675,7 @@ class CommentPostView(APIView):
                 status=status.HTTP_404_NOT_FOUND
             )
         except Post.DoesNotExist:
+            record_post_interaction('comment', 'post_not_found', post.privacy, 'free')
             return Response(
                 {
                     "status": "error",
@@ -636,6 +685,7 @@ class CommentPostView(APIView):
                 status=status.HTTP_404_NOT_FOUND
             )
         except DatabaseError as e:
+            record_post_interaction('comment', 'database_error', post.privacy, 'free')
             return Response(
                 {
                     "status": "error",
@@ -645,6 +695,7 @@ class CommentPostView(APIView):
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
         except Exception as e:
+            record_post_interaction('comment', 'unexpected_error', post.privacy, 'free')
             return Response(
                 {
                     "status": "error",
@@ -665,6 +716,7 @@ class SavePostView(APIView):
             
             # Check eligibility (same as like/comment, allows self-saves)
             if not PostService.check_save_eligibility(request.user, post):
+                record_post_interaction('save', 'create_not_eligible', post.privacy, 'free')
                 return Response(
                     {
                         "status": "error",
@@ -676,6 +728,7 @@ class SavePostView(APIView):
 
             # Check if already saved
             if PostService.get_save_by_user_and_post(request.user, post):
+                record_post_interaction('save', 'create_already_saved', post.privacy, 'free')
                 return Response(
                     {
                         "status": "error",
@@ -687,6 +740,7 @@ class SavePostView(APIView):
 
             # Create save
             PostService.create_save(request.user, post)
+            record_post_interaction('save', 'create', post.privacy, 'free')
             
             return Response(
                 {
@@ -698,6 +752,7 @@ class SavePostView(APIView):
             )
 
         except Post.DoesNotExist:
+            record_post_interaction('save', 'post_not_found', post.privacy, 'free')
             return Response(
                 {
                     "status": "error",
@@ -707,6 +762,7 @@ class SavePostView(APIView):
                 status=status.HTTP_404_NOT_FOUND
             )
         except DatabaseError as e:
+            record_post_interaction('save', 'database_error', post.privacy, 'free')
             return Response(
                 {
                     "status": "error",
@@ -716,6 +772,7 @@ class SavePostView(APIView):
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
         except Exception as e:
+            record_post_interaction('save', 'unexpected_error', post.privacy, 'free')
             return Response(
                 {
                     "status": "error",
@@ -732,6 +789,7 @@ class SavePostView(APIView):
             
             # Check if saved
             if not PostService.get_save_by_user_and_post(request.user, post):
+                record_post_interaction('save', 'delete_post_not_saved', post.privacy, 'free')
                 return Response(
                     {
                         "status": "error",
@@ -742,6 +800,7 @@ class SavePostView(APIView):
                 )
                 
             if not PostService.check_save_eligibility(request.user, post):
+                record_post_interaction('save', 'delete_not_eligible', post.privacy, 'free')
                 return Response(
                     {
                         "status": "error",
@@ -753,6 +812,8 @@ class SavePostView(APIView):
 
             # Delete save
             PostService.delete_save(request.user, post)
+            record_post_interaction('save', 'delete', post.privacy, 'free')
+
             
             return Response(
                 {
@@ -764,6 +825,7 @@ class SavePostView(APIView):
             )
 
         except Post.DoesNotExist:
+            record_post_interaction('save', 'post_not_found', post.privacy, 'free')
             return Response(
                 {
                     "status": "error",
@@ -773,6 +835,7 @@ class SavePostView(APIView):
                 status=status.HTTP_404_NOT_FOUND
             )
         except DatabaseError as e:
+            record_post_interaction('save', 'database_error', post.privacy, 'free')
             return Response(
                 {
                     "status": "error",
@@ -782,6 +845,7 @@ class SavePostView(APIView):
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
         except Exception as e:
+            record_post_interaction('save', 'unexpected_error', post.privacy, 'free')
             return Response(
                 {
                     "status": "error",

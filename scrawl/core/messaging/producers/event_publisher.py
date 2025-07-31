@@ -8,6 +8,7 @@ from datetime import datetime
 from typing import Dict, Any, Optional, Union
 from ..kafka.kafka_client import kafka_manager
 from ..kafka.kafka_config import kafka_config
+import time
 
 logger = logging.getLogger(__name__)
 
@@ -79,6 +80,11 @@ class EventPublisher:
                 key=message_key,
                 callback=callback
             )
+            try:
+                from ...monitoring.metrics.collectors import record_kafka_publish
+                record_kafka_publish(topic_name, payload.get('event_type', 'unknown'), True)
+            except ImportError:
+                pass  #
             
             # Handle synchronous vs asynchronous publishing
             if not async_publish:
@@ -92,6 +98,11 @@ class EventPublisher:
             
         except Exception as e:
             logger.error(f"Failed to publish event to {topic_name}: {e}")
+            try:
+                from ...monitoring.metrics.collectors import record_kafka_publish
+                record_kafka_publish(topic_name, payload.get('event_type', 'unknown'), False)
+            except ImportError:
+                pass
             return False
     
     def publish_follow_event(self, event_type_key: str, follower_id: int, followed_id: int,

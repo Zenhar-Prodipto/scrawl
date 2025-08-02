@@ -145,21 +145,72 @@ RATE_LIMIT_MIDDLEWARE = {
 LOGGING = {
     'version': 1,
     'disable_existing_loggers': False,
+    'formatters': {
+        # Existing formatter
+        'verbose': {
+            'format': '{levelname} {asctime} {module} {process:d} {thread:d} {message}',
+            'style': '{',
+        },
+        # ELK JSON formatter
+        'elk_json': {
+            '()': 'scrawl.core.monitoring.logging.ELKFormatter',
+            'format': '%(levelname)s %(name)s %(message)s'
+        },
+    },
     'handlers': {
+        # Existing handlers
         'console': {
             'class': 'logging.StreamHandler',
+            'formatter': 'verbose'
         },
         'api_metrics': {
             'class': 'logging.FileHandler',
             'filename': 'api_metrics.log',
+            'formatter': 'verbose'
+        },
+        # ELK handler for structured logs (Custom TCP)
+        'elk_tcp': {
+            'class': 'scrawl.core.monitoring.logging.ELKTCPHandler',
+            'host': 'drf_scrawl_logstash',
+            'port': 5000,
+            'formatter': 'elk_json',
+        },
+        # ELK file handler (backup if Logstash is down)
+        'elk_file': {
+            'class': 'logging.FileHandler',
+            'filename': 'elk_logs.json',
+            'formatter': 'elk_json',
         },
     },
     'loggers': {
+        # Existing logger
         'scrawl.api_metrics': {
             'handlers': ['console', 'api_metrics'],
             'level': 'INFO',
             'propagate': False,
         },
+        # ELK logger for structured logging
+        'scrawl.elk': {
+            'handlers': ['elk_tcp', 'elk_file', 'console'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+        # Security events logger
+        'scrawl.security': {
+            'handlers': ['elk_tcp', 'elk_file', 'console'],
+            'level': 'WARNING',
+            'propagate': False,
+        },
+        # Enhanced Django loggers for ELK
+        'django.request': {
+            'handlers': ['elk_tcp', 'console'],
+            'level': 'ERROR',
+            'propagate': False,
+        },
+    },
+    'root': {
+        'handlers': ['console'],
+        'level': 'INFO',
     },
 }
 

@@ -101,7 +101,7 @@ def check_kafka_health() -> Dict[str, Any]:
         Dict with health status and details
     """
     try:
-        # Import your Kafka manager
+        # Import Kafka manager
         from ...messaging.kafka.kafka_client import kafka_manager
         
         if kafka_manager.is_connected():

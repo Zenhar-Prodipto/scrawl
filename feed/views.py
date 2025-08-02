@@ -29,7 +29,7 @@ class FeedView(APIView):
             feed_data = FeedService.get_user_feed(request.user, page)
             posts = [item["post"] for item in feed_data['posts']]
             sources = {item["post"].id: item["source"] for item in feed_data['posts']}
-
+      
             serializer = PostListSerializer(posts, many=True, context={'request': request, 'user': request.user})
             serialized_data = serializer.data
 

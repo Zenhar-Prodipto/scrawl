@@ -15,6 +15,7 @@ media/
 
 api_metrics.log
 *.log
+elk_logs.json
 
 
 temp/ 

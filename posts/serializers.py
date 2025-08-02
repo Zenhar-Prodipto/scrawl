@@ -104,6 +104,7 @@ class PostDetailSerializer(serializers.ModelSerializer):
     
     
 class PostListSerializer(serializers.ModelSerializer):
+    user = UserPostSerializer(read_only=True)
     post_images = PostImageGetSerializer(many=True, read_only=True)
     tags = TagSerializer(many=True, read_only=True)
     liked_by_user = serializers.SerializerMethodField()
@@ -112,7 +113,7 @@ class PostListSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Post
-        fields = ['id', 'text', 'tags', 'privacy', 'post_images', 'liked_by_user', 'total_likes', 'total_comments', 'created_at', 'updated_at']
+        fields = ['id', 'user','text', 'tags', 'privacy', 'post_images', 'liked_by_user', 'total_likes', 'total_comments', 'created_at', 'updated_at']
 
     def get_liked_by_user(self, obj):
         user = self.context['request'].user

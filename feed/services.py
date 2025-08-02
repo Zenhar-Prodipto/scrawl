@@ -71,7 +71,7 @@ class FeedService:
                 user_id__in=following_ids,
                 created_at__gte=timezone.now() - timedelta(days=30)
             ).order_by('-created_at')
-            followed_posts = followed_posts[:200]  # Apply slice after filtering
+            followed_posts = followed_posts[:200]  #  slice after filtering
             for post in followed_posts:
                 if FeedService._is_post_visible(user, post):
                     feed_posts.append({
@@ -88,7 +88,7 @@ class FeedService:
                 privacy='public',
                 created_at__gte=timezone.now() - timedelta(days=14)
             ).order_by('-created_at')
-            interaction_posts = interaction_posts[:100]  # Apply slice after filtering
+            interaction_posts = interaction_posts[:100]  # slice after filtering
             for post in interaction_posts:
                 if FeedService._is_post_visible(user, post):
                     feed_posts.append({
@@ -105,7 +105,7 @@ class FeedService:
                 created_at__gte=timezone.now() - timedelta(days=7)
             ).exclude(user_id__in=following_ids.union(interaction_user_ids).union({user.id}))\
             .distinct().order_by('-created_at')
-            interest_posts = interest_posts[:50]  # Apply slice after filtering
+            interest_posts = interest_posts[:50]  # slice after filtering
             for post in interest_posts:
                 if FeedService._is_post_visible(user, post):
                     feed_posts.append({
@@ -113,6 +113,12 @@ class FeedService:
                         'source': 'interest',
                         'score': FeedService._calculate_post_score(post, 'interest')
                     })
+        if len(feed_posts) < 5:  #threshold for fallback
+            print(f"Feed too small for user {user.id} ({len(feed_posts)} posts), adding fallback")
+            logger.info(f"Feed too small for user {user.id} ({len(feed_posts)} posts), adding fallback")
+            existing_post_ids = {item['post'].id for item in feed_posts}
+            fallback_posts = FeedService._build_fallback_feed(user, existing_post_ids)
+            feed_posts.extend(fallback_posts)
 
         # 4. Deduplicate and sort
         seen_posts = set()
@@ -126,12 +132,76 @@ class FeedService:
 
     @staticmethod
     def _calculate_post_score(post: Post, source: str) -> float:
-        base_scores = {'following': 100, 'interaction': 50, 'interest': 25}
+        base_scores = {'following': 100, 'interaction': 50, 'interest': 25,'older_following': 20,'trending': 15}
         score = base_scores.get(source, 10)
         score += (post.likes_count * 2 + post.comments_count * 3 + post.saves_count * 5)
         age_hours = (timezone.now() - post.created_at).total_seconds() / 3600
         decay_factor = max(0.1, 1 - (age_hours / 168))  # Decay over a week
         return score * decay_factor
+    
+    @staticmethod
+    def _build_fallback_feed(user: User, existing_post_ids: set) -> List[Dict[str, Any]]:
+        """
+        Fallback feed when main feed has < 5 posts.
+        Priority: 1) Older posts from following, 2) Trending public posts
+        """
+        try:
+            following_ids = FeedService._get_user_following_cached(user.id)
+            fallback_posts = []
+            
+            base_queryset = Post.objects.select_related('user').prefetch_related(
+                'post_images',
+                'tags',
+                Prefetch('likes', queryset=Like.objects.select_related('user')),
+                Prefetch('comments', queryset=Comment.objects.select_related('user').order_by('-created_at')),
+                Prefetch('saves', queryset=Save.objects.select_related('user'))
+            ).annotate(
+                likes_count=Count('likes', distinct=True),
+                comments_count=Count('comments', distinct=True),
+                saves_count=Count('saves', distinct=True)
+            )
+
+            # 1. OLDER POSTS FROM FOLLOWING (6 months back)
+            if following_ids:
+                older_followed_posts = base_queryset.filter(
+                    user_id__in=following_ids,
+                    created_at__gte=timezone.now() - timedelta(days=180)  # 6 months
+                ).exclude(
+                    id__in=existing_post_ids  # Don't duplicate existing posts
+                ).order_by('-created_at')[:15]
+                
+                for post in older_followed_posts:
+                    if FeedService._is_post_visible(user, post):
+                        fallback_posts.append({
+                            'post': post,
+                            'source': 'older_following',
+                            'score': FeedService._calculate_post_score(post, 'older_following')
+                        })
+
+            # 2. TRENDING PUBLIC POSTS (if still need more)
+            if len(fallback_posts) < 10:  # Need more posts
+                trending_posts = base_queryset.filter(
+                    privacy='public',
+                    created_at__gte=timezone.now() - timedelta(days=30)  # Last 30 days
+                ).exclude(
+                    user_id=user.id  # Don't show user's own posts
+                ).exclude(
+                    id__in=existing_post_ids.union({p['post'].id for p in fallback_posts})
+                ).order_by('-likes_count', '-comments_count', '-created_at')[:15]
+                
+                for post in trending_posts:
+                    if FeedService._is_post_visible(user, post):
+                        fallback_posts.append({
+                            'post': post,
+                            'source': 'trending',
+                            'score': FeedService._calculate_post_score(post, 'trending')
+                        })
+
+            return fallback_posts[:20]  # Limit fallback posts
+            
+        except Exception as e:
+            logger.error(f"Error generating fallback feed for user {user.id}: {e}")
+            return []
 
     @staticmethod
     def _is_post_visible(user: User, post: Post) -> bool:
@@ -147,7 +217,7 @@ class FeedService:
             start_time = time.time()
             cached_page = cache_manager.get('feed_page', user_id=user.id, page=page)
             cached_meta = cache_manager.get('user_feed', user_id=user.id)  # For metadata
-
+            
             if cached_page and cached_meta:
                 record_feed_request('free', True) 
                 record_feed_operation('cache_hit', True, 'free')
